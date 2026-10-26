@@ -5,12 +5,31 @@ from typing import Callable
 # receives the client_id and the count of messages sent by the previous stage
 BarrierCallback = Callable[[str, int], None]
 
+#["EOF", client_id, count] 
+
+# ["PROCESSED", client_id, replica_id, count]
+PublishControlCallback = Callable[[list], None]
+
+# Contants
+CONTROL_EOF = "EOF"
+CONTROL_PROCESSED = "PROCESSED"
+
+# Class to hold the state of each client
+class _ClientState:
+    def __init__(self):
+        self.eof_received = 0
+        self.expected_total = 0
+        self.message_counts = {} # {replica_id: processed_messages count} 
+
 class EofCoordinator(ABC):
-    def __init__(self, replica_id, amount_of_replicas, on_barrier: BarrierCallback):
+    def __init__(self, replica_id, previous_stage_replicas, on_barrier: BarrierCallback, publish_control: PublishControlCallback):
         self.replica_id = replica_id
-        self.amount_of_replicas = amount_of_replicas # amount of EOF to wait
-        self._on_barrier = on_barrier
+        self.eofs_expected = previous_stage_replicas # amount of EOF to wait
         self._clients = {} # {client_id: _ClientState}
+
+        # worker callbacks
+        self._on_barrier = on_barrier
+        self._publish_control = publish_control # TOD: documentar desp que esto lo hago para invocar desde el coordinator una funcion del worker (que es el que tiene la comunicacion entre replicas)
 
     # Public API for Workers
 
@@ -18,14 +37,22 @@ class EofCoordinator(ABC):
         """
         Notifies that an EOF has been received from a specific client and the count of messages sent by the previous stage.
         """
-        self._run(client_id, count)
+        self._publish_control([CONTROL_EOF, client_id, count])
+
+    def on_control(self, control_message):
+        """
+        Notifies that a control message from the control exchange has been received."""
+        type_message = control_message[0]
+        if type_message == CONTROL_EOF:
+            _, client_id, count = control_message
+            client_state = self._get_client_state(client_id)
+            client_state.eof_received += 1
+            client_state.expected_total += count
 
     # Helpers
-    def _run(self, client_id, count):
-        pass
 
-class _ClientState:
-    def __init__(self):
-        self.eof_received = 0
-        self.expected_total = 0
-        self.message_counts = {} # {replica_id: processed_messages count} 
+    def _get_client_state(self, client_id):
+        if client_id not in self._clients:
+            self._clients[client_id] = _ClientState()
+        return self._clients[client_id]
+

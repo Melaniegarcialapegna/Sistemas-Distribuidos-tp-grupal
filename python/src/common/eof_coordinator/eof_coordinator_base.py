@@ -26,6 +26,7 @@ class EofCoordinator(ABC):
         self.replica_id = replica_id # DOC: se guarda replica para ir pisando los valores q me van llegando y no sumar de mas
         self.eofs_expected = previous_stage_replicas # amount of EOF to wait
         self._clients = {} # {client_id: _ClientState}
+        self._finished_clients = set()
 
         # worker callbacks
         self._on_barrier = on_barrier
@@ -37,6 +38,8 @@ class EofCoordinator(ABC):
         """
         Notifies that an EOF has been received from a specific client and the count of messages sent by the previous stage.
         """
+        if self._is_finished_client(client_id): return  
+    
         self._publish_control([CONTROL_EOF, client_id, count])
 
     def on_data_processed(self, client_id, amount):
@@ -44,6 +47,8 @@ class EofCoordinator(ABC):
         Notifies that the worker finished processing a amount of messages of the client
         """
         if amount <=0: return
+
+        if self._is_finished_client(client_id): return
 
         client_state = self._get_client_state(client_id)
         client_state.message_counts[self.replica_id] = client_state.message_counts.get(self.replica_id, 0) + amount
@@ -57,6 +62,9 @@ class EofCoordinator(ABC):
         """
         Notifies that a control message from the control exchange has been received."""
         type_message = control_message[0]
+        client_id = control_message[1]
+        if self._is_finished_client(client_id): return
+
         if type_message == CONTROL_EOF:
             _, client_id, count = control_message
             client_state = self._get_client_state(client_id)
@@ -84,6 +92,9 @@ class EofCoordinator(ABC):
             self._clients[client_id] = _ClientState()
         return self._clients[client_id]
 
+    def _is_finished_client(self, client_id):
+        return client_id in self._finished_clients
+
     def _all_eofs_received(self, client_state):
         """
         Checks if all EOFs have been received for a specific client.
@@ -108,4 +119,6 @@ class EofCoordinator(ABC):
 
         if total_processed == client_state.expected_total:
             self._on_barrier(client_id, total_processed)
+            self._finished_clients.add(client_id)
             del self._clients[client_id]  
+

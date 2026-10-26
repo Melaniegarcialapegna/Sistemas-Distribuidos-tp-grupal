@@ -10,7 +10,7 @@ BarrierCallback = Callable[[str, int], None]
 # ["PROCESSED", client_id, replica_id, count]
 PublishControlCallback = Callable[[list], None]
 
-# Contants
+# Constants
 CONTROL_EOF = "EOF"
 CONTROL_PROCESSED = "PROCESSED"
 
@@ -51,6 +51,8 @@ class EofCoordinator(ABC):
         if self._all_eofs_received(client_state):
             self._publish_own_count(client_id, client_state)
 
+        self._check_barrier(client_id, client_state)
+
     def on_control(self, control_message):
         """
         Notifies that a control message from the control exchange has been received."""
@@ -64,12 +66,16 @@ class EofCoordinator(ABC):
             if self._all_eofs_received(client_state):
                 self._publish_own_count(client_id, client_state)
 
+            self._check_barrier(client_id, client_state)
+
         elif type_message == CONTROL_PROCESSED:
             _, client_id, replica_id, count = control_message
             if replica_id != self.replica_id: # ignore own messages
                 client_state = self._get_client_state(client_id)
                 register = client_state.message_counts.get(replica_id, 0)
                 client_state.message_counts[replica_id] = max(register, count) # doc: evita duplicados o mensajes viejos
+
+            self._check_barrier(client_id, client_state)
 
     # Helpers
 
@@ -84,12 +90,22 @@ class EofCoordinator(ABC):
         """
         return client_state.eof_received == self.eofs_expected
 
-    def _publish_own_count(self, client_id, state):
+    def _publish_own_count(self, client_id, client_state):
         """
         Publishes the count of messages processed by this replica for a specific client.
         """
-        own_count = state.message_counts.get(self.replica_id, 0)
+        own_count = client_state.message_counts.get(self.replica_id, 0)
         self._publish_control([CONTROL_PROCESSED, client_id, self.replica_id, own_count])
 
-    
+    def _check_barrier(self, client_id, client_state):
+        """
+        Checks if the barrier has been reached for a specific client.
+        """
+        if not self._all_eofs_received(client_state):
+            return
 
+        total_processed = sum(client_state.message_counts.values()) # of all the replicas, including this one
+
+        if total_processed == client_state.expected_total:
+            self._on_barrier(client_id, total_processed)
+            del self._clients[client_id]  

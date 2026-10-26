@@ -64,6 +64,13 @@ class EofCoordinator(ABC):
             if self._all_eofs_received(client_state):
                 self._publish_own_count(client_id, client_state)
 
+        elif type_message == CONTROL_PROCESSED:
+            _, client_id, replica_id, count = control_message
+            if replica_id != self.replica_id: # ignore own messages
+                client_state = self._get_client_state(client_id)
+                register = client_state.message_counts.get(replica_id, 0)
+                client_state.message_counts[replica_id] = max(register, count) # doc: evita duplicados o mensajes viejos
+
     # Helpers
 
     def _get_client_state(self, client_id):

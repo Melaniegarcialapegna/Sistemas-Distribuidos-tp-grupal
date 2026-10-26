@@ -13,26 +13,66 @@ PublishControlCallback = Callable[[list], None]
 # Constants
 CONTROL_EOF = "EOF"
 CONTROL_PROCESSED = "PROCESSED"
+ERROR_MUST_IMPLEMENT = "must be implemented in subclasses"
 
 # Class to hold the state of each client
 class _ClientState:
     def __init__(self):
         self.eof_received = 0
         self.expected_total = 0
-        self.message_counts = {} # {replica_id: processed_messages count} 
+        self.message_counts = {} # {replica_id: processed_messages_count} 
 
 class EofCoordinator(ABC):
-    def __init__(self, replica_id, previous_stage_replicas, on_barrier: BarrierCallback, publish_control: PublishControlCallback):
+    def __init__(self, replica_id, previous_stage_replicas, on_barrier: BarrierCallback):
         self.replica_id = replica_id # DOC: se guarda replica para ir pisando los valores q me van llegando y no sumar de mas
         self.eofs_expected = previous_stage_replicas # amount of EOF to wait
         self._clients = {} # {client_id: _ClientState}
         self._finished_clients = set()
 
-        # worker callbacks
+        # worker callback
         self._on_barrier = on_barrier
-        self._publish_control = publish_control # DOC: esto lo hago para invocar desde el coordinator una funcion del worker (que es el que tiene la comunicacion entre replicas)
 
     # Public API for Workers
+
+    @abstractmethod
+    def on_eof(self,client_id, count):
+        raise NotImplementedError(ERROR_MUST_IMPLEMENT)
+
+    def on_data_processed(self, client_id, amount):
+        pass  
+
+    def on_control(self, control_message):
+        pass  
+
+    # Helpers
+
+    def _get_client_state(self, client_id):
+        if client_id not in self._clients:
+            self._clients[client_id] = _ClientState()
+        return self._clients[client_id]
+    
+
+    def _is_finished_client(self, client_id):
+        return client_id in self._finished_clients
+    
+
+    def _all_eofs_received(self, client_state):
+        """
+        Checks if all EOFs have been received for a specific client.
+        """
+        return client_state.eof_received == self.eofs_expected
+    
+
+    def _finish_client(self, client_id, total):
+        self._clients.pop(client_id, None)
+        self._finished_clients.add(client_id)
+        self._on_barrier(client_id, total)
+
+
+class QueueEofCoordinator(EofCoordinator):
+    def __init__(self, replica_id, previous_stage_replicas, on_barrier, publish_control):
+        super().__init__(replica_id, previous_stage_replicas, on_barrier)
+        self._publish_control = publish_control # DOC: esto lo hago para invocar desde el coordinator una funcion del worker (que es el que tiene la comunicacion entre replicas)
 
     def on_eof(self,client_id, count):
         """
@@ -41,6 +81,7 @@ class EofCoordinator(ABC):
         if self._is_finished_client(client_id): return  
     
         self._publish_control([CONTROL_EOF, client_id, count])
+
 
     def on_data_processed(self, client_id, amount):
         """
@@ -57,6 +98,7 @@ class EofCoordinator(ABC):
             self._publish_own_count(client_id, client_state)
 
         self._check_barrier(client_id, client_state)
+
 
     def on_control(self, control_message):
         """
@@ -85,40 +127,38 @@ class EofCoordinator(ABC):
 
                 self._check_barrier(client_id, client_state)
 
-    # Helpers
-
-    def _get_client_state(self, client_id):
-        if client_id not in self._clients:
-            self._clients[client_id] = _ClientState()
-        return self._clients[client_id]
-
-    def _is_finished_client(self, client_id):
-        return client_id in self._finished_clients
-
-    def _all_eofs_received(self, client_state):
-        """
-        Checks if all EOFs have been received for a specific client.
-        """
-        return client_state.eof_received == self.eofs_expected
 
     def _publish_own_count(self, client_id, client_state):
-        """
-        Publishes the count of messages processed by this replica for a specific client.
-        """
-        own_count = client_state.message_counts.get(self.replica_id, 0)
-        self._publish_control([CONTROL_PROCESSED, client_id, self.replica_id, own_count])
+            """
+            Publishes the count of messages processed by this replica for a specific client.
+            """
+            own_count = client_state.message_counts.get(self.replica_id, 0)
+            self._publish_control([CONTROL_PROCESSED, client_id, self.replica_id, own_count])
 
+    
     def _check_barrier(self, client_id, client_state):
+            """
+            Checks if the barrier has been reached for a specific client.
+            """
+            if not self._all_eofs_received(client_state):
+                return
+    
+            total_processed = sum(client_state.message_counts.values()) # of all the replicas, including this one
+    
+            if total_processed == client_state.expected_total:
+                self._finish_client(client_id, total_processed)
+
+    
+class ExchangeEofCoordinator(EofCoordinator):
+    def on_eof(self, client_id, count):
         """
-        Checks if the barrier has been reached for a specific client.
+        Notifies that an EOF has been received from a specific client and the count of messages sent by the previous stage.
         """
-        if not self._all_eofs_received(client_state):
-            return
+        if self._is_finished_client(client_id): return  
+    
+        client_state = self._get_client_state(client_id)
+        client_state.eof_received += 1
+        client_state.expected_total += count
 
-        total_processed = sum(client_state.message_counts.values()) # of all the replicas, including this one
-
-        if total_processed == client_state.expected_total:
-            self._on_barrier(client_id, total_processed)
-            self._finished_clients.add(client_id)
-            del self._clients[client_id]  
-
+        if self._all_eofs_received(client_state):
+            self._finish_client(client_id, client_state.expected_total) 

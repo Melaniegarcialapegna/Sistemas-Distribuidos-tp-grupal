@@ -83,7 +83,7 @@ class EofCoordinator(ABC):
                 register = client_state.message_counts.get(replica_id, 0)
                 client_state.message_counts[replica_id] = max(register, count) # doc: evita duplicados o mensajes viejos
 
-            self._check_barrier(client_id, client_state)
+                self._check_barrier(client_id, client_state)
 
     # Helpers
 

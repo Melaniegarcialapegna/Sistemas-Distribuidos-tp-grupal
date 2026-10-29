@@ -5,11 +5,6 @@ from typing import Callable
 # receives the client_id and the count of messages sent by the previous stage
 BarrierCallback = Callable[[str, int], None]
 
-#["EOF", client_id, count] 
-
-# ["PROCESSED", client_id, replica_id, count]
-PublishControlCallback = Callable[[list], None]
-
 # Constants
 ERROR_MUST_IMPLEMENT = "must be implemented in subclasses"
 
@@ -25,7 +20,6 @@ class EofCoordinator(ABC):
         self.replica_id = replica_id # DOC: se guarda replica para ir pisando los valores q me van llegando y no sumar de mas
         self.eofs_expected = previous_stage_replicas # amount of EOF to wait
         self._clients = {} # {client_id: _ClientState}
-        self._finished_clients = set()
 
         # worker callback
         self._on_barrier = on_barrier
@@ -50,10 +44,6 @@ class EofCoordinator(ABC):
         return self._clients[client_id]
     
 
-    def _is_finished_client(self, client_id):
-        return client_id in self._finished_clients
-    
-
     def _all_eofs_received(self, client_state):
         """
         Checks if all EOFs have been received for a specific client.
@@ -63,6 +53,5 @@ class EofCoordinator(ABC):
 
     def _finish_client(self, client_id, total):
         self._clients.pop(client_id, None)
-        self._finished_clients.add(client_id)
         self._on_barrier(client_id, total)
 

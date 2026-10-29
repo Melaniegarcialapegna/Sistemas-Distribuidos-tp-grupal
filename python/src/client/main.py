@@ -1,8 +1,9 @@
 import os
 import logging
-import csv
 import socket
 import signal
+import threading
+import pyarrow.parquet as pq
 
 from common import message_protocol
 
@@ -11,6 +12,9 @@ OUTPUT_FILE = os.environ["OUTPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
+
+ROW_BATCH_SIZE = 1000 # add to config
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"] 
 
 class Client:
 
@@ -34,39 +38,39 @@ class Client:
         if self.server_socket:
             self.server_socket.shutdown(socket.SHUT_RDWR)
 
-    def send_fruit_records(self, input_file):
-        logging.info("Sending fruit records")
-        with open(input_file, newline="\n") as csvfile:
-            csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-            for row in csv_reader:
-                [fruit, amount] = row
+    def send_article_info(self, input_file):
+        logging.info("Sending article info")
+        parquet_file = pq.ParquetFile(input_file)
+        for batch in parquet_file.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
+                batch_data = batch.to_pylist()
                 message_protocol.external.send_msg(
                     self.server_socket,
-                    message_protocol.external.MsgType.FRUIT_RECORD,
-                    fruit,
-                    int(amount),
+                    message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
+                    batch_data
                 )
-                message_protocol.external.recv_msg(self.server_socket)
 
         message_protocol.external.send_msg(
             self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
         )
-        message_protocol.external.recv_msg(self.server_socket)
 
-    def recv_fruit_top(self, output_file):
-        logging.info("Receiving fruit top")
-        fruit_top_message = message_protocol.external.recv_msg(self.server_socket)
-        message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.ACK
-        )
+    def recv_results(self):
+        try:
+            while not self.closed:
+                logging.info("Receiving results")
+                result_message = message_protocol.external.recv_msg(self.server_socket)
+                
+                msg_type = result_message[0]
+                payload = result_message[1]
 
-        if fruit_top_message[0] != message_protocol.external.MsgType.FRUIT_TOP:
-            raise TypeError("Expected a FRUIT_TOP message")
-
-        with open(output_file, "w") as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            for fruit_item in fruit_top_message[1]:
-                csv_writer.writerow(fruit_item)
+                if msg_type == message_protocol.external.MsgType.RESULT:
+                    print(payload)
+                    # send ACK
+                    message_protocol.external.send_msg(
+                        self.server_socket, message_protocol.external.MsgType.ACK
+                    )
+        except Exception as e:
+            if not self.closed:
+                logging.error(f"Error in receiver: {e}")
 
 
 def main() -> int:
@@ -75,8 +79,13 @@ def main() -> int:
 
     try:
         client.connect(SERVER_HOST, SERVER_PORT)
-        client.send_fruit_records(INPUT_FILE)
-        client.recv_fruit_top(OUTPUT_FILE)
+
+        receiver_thread = threading.Thread(target=client.recv_results)
+        receiver_thread.start()
+
+        client.send_article_info(INPUT_FILE)
+
+        receiver_thread.join()
     except socket.error:
         if not client.closed:
             logging.error("The connection with the server was lost")

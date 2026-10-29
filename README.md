@@ -1,8 +1,8 @@
 # Trabajo Práctico grupal
 ## Integrantes
-- x - padrón: 
-- x
-- x
+- Pedro Santiago Gillen - Padrón: 112333
+- Melanie Belén García Lapegna - Padrón: 111848
+- Martina Riccardi - Padrón: 111859
 
 ## Ejecución
 

@@ -1,5 +1,5 @@
 import unittest
-from src.common.message_protocol.tlv_protocol import serialize_tlv, deserialize_tlv
+from src.common.message_protocol.tlv_protocol import serialize_tlv, deserialize_tlv, TYPE_REPRESENTATIONS
 
 class TestTLVSerialization(unittest.TestCase):
     def test_serialize_deserialize_int(self):
@@ -22,7 +22,7 @@ class TestTLVSerialization(unittest.TestCase):
 
     def test_unsupported_type(self):
         with self.assertRaises(ValueError):
-            serialize_tlv([42, 3.14])  # float is unsupported
+            serialize_tlv([42, {"key": "value"}])  # float is unsupported
 
     def test_empty_list(self):
         original_data = []
@@ -34,8 +34,28 @@ class TestTLVSerialization(unittest.TestCase):
         original_data = [42, "hello"]
         serialized_data = serialize_tlv(original_data)
         expected_bytes = bytearray()
-        expected_bytes.extend(b'\x01' + (42).to_bytes(4, 'big'))  # INT type
-        expected_bytes.extend(b'\x02' + (5).to_bytes(4, 'big') + b'hello')  # STRING type
+        int_byte = TYPE_REPRESENTATIONS['INT'].to_bytes(1, 'big')
+        string_byte = TYPE_REPRESENTATIONS['STRING'].to_bytes(1, 'big')
+        expected_bytes.extend(int_byte + (42).to_bytes(4, 'big'))
+        expected_bytes.extend(string_byte + (5).to_bytes(4, 'big') + b'hello')
+        self.assertEqual(serialized_data, bytes(expected_bytes))
+
+    def test_deserialize_invalid_data(self):
+        with self.assertRaises(ValueError):
+            deserialize_tlv(b'\x01\x02' + b'ok' + b'\x00\x00\x00')  # Invalid type byte
+
+    def test_serialize_deserialize_bytes(self):
+        original_data = [b'\x00\x01\x02', b'\x03\x04\x05']
+        serialized_data = serialize_tlv(original_data)
+        deserialized_data = deserialize_tlv(serialized_data)
+        self.assertEqual(original_data, deserialized_data)
+
+    def test_bytes_are_represented_correctly(self):
+        original_data = [b'\x00\x01\x02']
+        serialized_data = serialize_tlv(original_data)
+        expected_bytes = bytearray()
+        bytes_byte = TYPE_REPRESENTATIONS['BYTES'].to_bytes(1, 'big')
+        expected_bytes.extend(bytes_byte + (3).to_bytes(4, 'big') + b'\x00\x01\x02')  # BYTES type
         self.assertEqual(serialized_data, bytes(expected_bytes))
 
 class TestMessageProtocol(unittest.TestCase):

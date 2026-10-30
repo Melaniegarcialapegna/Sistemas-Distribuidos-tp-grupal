@@ -7,7 +7,6 @@ TYPE_REPRESENTATIONS = {
 
 # The length of the length field (not the data) in bytes for all types.
 LENGTH_BYTES = 4
-INT_SIZE = 4
 
 # Pensandolo bien, tener una clase Message para todos los mensajes no tiene mucho sentido, 
 # porque cada mensaje tiene su propia estructura y no hay un mensaje que sea "padre" de todos los demas. 
@@ -39,7 +38,7 @@ def serialize_string(value):
     encoded_string = value.encode("utf-8")
     length = len(encoded_string)
     type_byte = TYPE_REPRESENTATIONS['STRING'].to_bytes(1, "big")
-    return type_byte + length.to_bytes(4, "big") + encoded_string
+    return type_byte + length.to_bytes(LENGTH_BYTES, "big") + encoded_string
 
 def serialize_int(value):
     """
@@ -49,8 +48,9 @@ def serialize_int(value):
     :return: A bytes object representing the serialized TLV data for the integer.
     """
     type_byte = TYPE_REPRESENTATIONS['INT'].to_bytes(1, "big")
-    length_bytes = (INT_SIZE).to_bytes(4, "big")
-    return type_byte + length_bytes + value.to_bytes(4, "big")
+    length_bytes_quantity = (value.bit_length() + 7) // 8 or 1  # cantidad minima de bytes para representar el int
+    length_bytes = length_bytes_quantity.to_bytes(LENGTH_BYTES, "big")
+    return type_byte + length_bytes + value.to_bytes(length_bytes_quantity, "big")
 
 def serialize_bytes(value):
     """
@@ -61,7 +61,7 @@ def serialize_bytes(value):
     """
     length = len(value)
     type_byte = TYPE_REPRESENTATIONS['BYTES'].to_bytes(1, "big")
-    return type_byte + length.to_bytes(4, "big") + value
+    return type_byte + length.to_bytes(LENGTH_BYTES, "big") + value
 
 def serialize_float(value):
     """

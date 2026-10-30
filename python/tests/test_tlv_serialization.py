@@ -38,7 +38,7 @@ class TestTLVSerialization(unittest.TestCase):
         expected_bytes = bytearray()
         int_byte = TYPE_REPRESENTATIONS['INT'].to_bytes(1, 'big')
         string_byte = TYPE_REPRESENTATIONS['STRING'].to_bytes(1, 'big')
-        expected_bytes.extend(int_byte + (4).to_bytes(4, 'big') + (42).to_bytes(4, 'big'))
+        expected_bytes.extend(int_byte + (1).to_bytes(4, 'big') + (42).to_bytes(1, 'big'))
         expected_bytes.extend(string_byte + (5).to_bytes(4, 'big') + b'hello')
         self.assertEqual(serialized_data, bytes(expected_bytes))
 

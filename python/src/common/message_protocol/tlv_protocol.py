@@ -5,27 +5,9 @@ TYPE_REPRESENTATIONS = {
     "FLOAT": 4,
 }
 
+
 # The length of the length field (not the data) in bytes for all types.
 LENGTH_BYTES = 4
-
-# Pensandolo bien, tener una clase Message para todos los mensajes no tiene mucho sentido, 
-# porque cada mensaje tiene su propia estructura y no hay un mensaje que sea "padre" de todos los demas. 
-# En tal caso cada mensaje deberia tener su propia clase, y que cada clase tenga su propio metodo serialize y deserialize. 
-# De esta manera, cada mensaje va a ser responsable de serializar y deserializar sus propios datos, 
-# y no vamos a tener que depender de una clase Message generica.
-# El drawback de eso seria que medio que explota la cantidad de clases que tenemos y cada vez que agregamos un mensaje hay que crear una clase nueva.
-# La dejo porque puede llegar a ser necesaria
-class Message:
-    def __init__(self, params):
-        self.params = params
-
-    # Creo que no lo vamos a usar, para serializar me parece mas sencillo usar la funcion directamente
-    def serialize(self):
-        return serialize_tlv(self.params)
-
-    @staticmethod
-    def from_bytes(data):
-        return Message(deserialize_tlv(data))
 
 
 def serialize_string(value):

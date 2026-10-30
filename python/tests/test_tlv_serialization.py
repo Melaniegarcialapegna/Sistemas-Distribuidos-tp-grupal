@@ -1,7 +1,22 @@
 import unittest
 
-from src.common.message_protocol.tlv_protocol import serialize_tlv, deserialize_tlv, TYPE_REPRESENTATIONS, LENGTH_BYTES
-from src.common.message_protocol.internal import serialize_batch, deserialize_batch
+from src.common.message_protocol.tlv_protocol import (
+    serialize_tlv,
+    deserialize_tlv,
+    TYPE_REPRESENTATIONS,
+    LENGTH_BYTES,
+)
+from src.common.message_protocol.internal import (
+    TLVSerializator,
+    TLVDeserializer,
+    MESSAGE_TYPE_REPRESENTATIONS,
+)
+from src.common.message_protocol.msgtype import (
+    DataMessageType,
+    EOFMessageType,
+    BatchMessageType,
+)
+
 
 class TestTLVSerialization(unittest.TestCase):
     def test_serialize_deserialize_int(self):
@@ -24,7 +39,7 @@ class TestTLVSerialization(unittest.TestCase):
 
     def test_unsupported_type(self):
         with self.assertRaises(ValueError):
-            serialize_tlv([42, {"key": "value"}])  # float is unsupported
+            serialize_tlv([42, {"key": "value"}])  # dict is unsupported
 
     def test_empty_list(self):
         original_data = []
@@ -60,20 +75,47 @@ class TestTLVSerialization(unittest.TestCase):
         expected_bytes.extend(bytes_byte + (3).to_bytes(4, 'big') + b'\x00\x01\x02')  # BYTES type
         self.assertEqual(serialized_data, bytes(expected_bytes))
 
-class TestMessageProtocol(unittest.TestCase):
-    def test_serialize_deserialize_message(self):
-        from src.common.message_protocol.tlv_protocol import Message
-        original_message = Message([42, "hello"])
-        serialized_message = original_message.serialize()
-        deserialized_message = Message.from_bytes(serialized_message)
-        self.assertEqual(original_message.params, deserialized_message.params)
 
-    def test_from_bytes(self):
-        from src.common.message_protocol.tlv_protocol import Message
-        original_data = [42, "hello"]
-        serialized_data = serialize_tlv(original_data)
-        message = Message.from_bytes(serialized_data)
-        self.assertEqual(message.params, original_data)
+class TestInternalMessages(unittest.TestCase):
+    def test_serialize_deserialize_data_message(self):
+        original_payload = [42, "hello", 100]
+        data_message = DataMessageType(original_payload)
+
+        serialized = TLVSerializator.serialize_message(data_message)
+        deserialized = TLVDeserializer.deserialize_message(serialized)
+
+        self.assertIsInstance(deserialized, DataMessageType)
+        self.assertEqual(deserialized.payload, original_payload)
+
+    def test_serialize_deserialize_eof_message(self):
+        original_payload = ["client_123", 500]
+        eof_message = EOFMessageType(original_payload)
+
+        serialized = TLVSerializator.serialize_message(eof_message)
+        deserialized = TLVDeserializer.deserialize_message(serialized)
+
+        self.assertIsInstance(deserialized, EOFMessageType)
+        self.assertEqual(deserialized.payload, original_payload)
+
+    def test_serialize_deserialize_batch_message(self):
+        batch_payload = [
+            [42, "hello"],
+            [100, "world", b'\x01\x02'],
+            ["bye", 256]
+        ]
+        batch_message = BatchMessageType(batch_payload)
+
+        serialized = TLVSerializator.serialize_message(batch_message)
+        deserialized = TLVDeserializer.deserialize_message(serialized)
+
+        self.assertIsInstance(deserialized, BatchMessageType)
+        self.assertEqual(deserialized.payload, batch_payload)
+
+    def test_deserialize_invalid_message_type(self):
+        invalid_type_byte = b'\x99' + serialize_tlv([42])
+        with self.assertRaises(ValueError):
+            TLVDeserializer.deserialize_message(invalid_type_byte)
+
 
 class TestBatchSerialization(unittest.TestCase):
     def test_serialize_deserialize_batch(self):
@@ -82,20 +124,20 @@ class TestBatchSerialization(unittest.TestCase):
             [100, "world"],
             [256, "test"]
         ]
-        serialized_batch = serialize_batch(messages)
-        deserialized_messages = deserialize_batch(serialized_batch)
+        serialized_batch = TLVSerializator.serialize_batch(messages)
+        deserialized_messages = TLVDeserializer.deserialize_batch(serialized_batch)
         self.assertEqual(messages, deserialized_messages)
 
     def test_empty_batch(self):
         messages = []
-        serialized_batch = serialize_batch(messages)
-        deserialized_messages = deserialize_batch(serialized_batch)
+        serialized_batch = TLVSerializator.serialize_batch(messages)
+        deserialized_messages = TLVDeserializer.deserialize_batch(serialized_batch)
         self.assertEqual(messages, deserialized_messages)
 
     def test_single_message_batch(self):
         messages = [[42, "hello"]]
-        serialized_batch = serialize_batch(messages)
-        deserialized_messages = deserialize_batch(serialized_batch)
+        serialized_batch = TLVSerializator.serialize_batch(messages)
+        deserialized_messages = TLVDeserializer.deserialize_batch(serialized_batch)
         self.assertEqual(messages, deserialized_messages)
 
     def test_batch_with_varied_messages(self):
@@ -104,8 +146,8 @@ class TestBatchSerialization(unittest.TestCase):
             [100, "world", b'\x00\x01'],
             ["goodbye", 256, b'\x02\x03\x04', "test"]
         ]
-        serialized_batch = serialize_batch(messages)
-        deserialized_messages = deserialize_batch(serialized_batch)
+        serialized_batch = TLVSerializator.serialize_batch(messages)
+        deserialized_messages = TLVDeserializer.deserialize_batch(serialized_batch)
         self.assertEqual(messages, deserialized_messages)
 
 

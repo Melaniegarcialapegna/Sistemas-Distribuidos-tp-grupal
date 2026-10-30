@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional
 
 
 class MiddlewareError(Exception):
@@ -61,7 +61,7 @@ class MiddlewareHandler(ABC):
     def subscribe_to_exchange(
         self,
         exchange_name: str,
-        routing_keys: Optional[Union[str, List[str]]] = None,
+        routing_keys: Optional[List[str]] = None,
         callback: Callable = None,
         **kwargs
     ) -> str:
@@ -136,19 +136,18 @@ class MiddlewareHandler(ABC):
     def send(
         self,
         destination: str,
-        payload: Union[bytes, str],
-        routing_key: Optional[str] = None
+        payload: bytes,
+        routing_keys: Optional[List[str]] = None,
     ) -> None:
         """
         Envía un mensaje a una cola o exchange.
-        - Si routing_key es provisto (o destination es un exchange conocido),
-          se publica al exchange destination con la routing_key especificada.
-        - Si routing_key es None y destination es una cola, se publica directamente
-          a dicha cola.
+        - Si routing_keys es provisto, se publica al exchange destination con cada una de las routing keys especificadas.
+        - Si routing_keys es None y destination es un exchange registrado, se publica a dicho exchange con las routing keys asociadas.
+        - Si routing_keys es None y destination es una cola, se publica directamente a dicha cola utilizando el default exchange.
 
         :param destination: Nombre de la cola o exchange destino.
-        :param payload: Contenido del mensaje (bytes o string).
-        :param routing_key: Clave de enrutamiento (opcional).
+        :param payload: Contenido del mensaje en bytes.
+        :param routing_keys: Lista de claves de enrutamiento (opcional).
         :raises MiddlewareDisconnectedError: Si se pierde la conexión.
         :raises MiddlewareMessageError: Si ocurre un error interno.
         """
@@ -158,14 +157,14 @@ class MiddlewareHandler(ABC):
     def broadcast(
         self,
         exchange: str,
-        payload: Union[bytes, str]
+        payload: bytes
     ) -> None:
         """
         Envía un mensaje a todos los suscriptores del exchange especificado
         (típicamente fanout o direct sin clave específica).
 
         :param exchange: Nombre del exchange al que enviar en broadcast.
-        :param payload: Contenido del mensaje (bytes o string).
+        :param payload: Contenido del mensaje en bytes.
         :raises MiddlewareDisconnectedError: Si se pierde la conexión.
         :raises MiddlewareMessageError: Si ocurre un error interno.
         """

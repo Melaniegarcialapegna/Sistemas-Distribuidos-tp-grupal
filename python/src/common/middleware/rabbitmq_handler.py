@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional
 import pika
 import pika.exceptions
 
@@ -41,17 +41,21 @@ class RabbitMQHandler(MiddlewareHandler):
         self.host = host
         self.consuming: bool = False
         self.queue_names: List[str] = []
-        self.exchange_names: Dict[str, List[str]] = {} # mapea exchange_name -> routing_keys
+        self.exchange_names: Dict[str, List[str]] = {}
+        self.connection: Optional[pika.BlockingConnection] = None
+        self.channel: Optional[pika.adapters.blocking_connection.BlockingChannel] = None
 
         try:
-            self.connection: pika.BlockingConnection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
+            params = connection_params or pika.ConnectionParameters(host=host)
+            self.connection = pika.BlockingConnection(params)
             self.channel = self.connection.channel()
-
         except self.PIKA_DISCONNECTION_ERRORS as error:
             logger.error(f"Error connecting to RabbitMQ broker at '{self.host}': {error}")
+            self.close()
             raise MiddlewareDisconnectedError(str(error)) from error
-        except pika.exceptions.AMQPError as error:
-            logger.error(f"AMQP error initializing RabbitMQ handler: {error}")
+        except Exception as error:
+            logger.error(f"Error initializing RabbitMQ handler: {error}")
+            self.close()
             raise MiddlewareMessageError(str(error)) from error
 
     def _ensure_connected(self) -> None:
@@ -74,9 +78,10 @@ class RabbitMQHandler(MiddlewareHandler):
                     raise MiddlewareDisconnectedError(str(err)) from err
                 except pika.exceptions.AMQPError as err:
                     raise MiddlewareMessageError(str(err)) from err
-            def nack():
+
+            def nack(requeue: bool = True):
                 try:
-                    channel.basic_nack(delivery_tag=method.delivery_tag)
+                    channel.basic_nack(delivery_tag=method.delivery_tag, requeue=requeue)
                 except self.PIKA_DISCONNECTION_ERRORS as err:
                     raise MiddlewareDisconnectedError(str(err)) from err
                 except pika.exceptions.AMQPError as err:
@@ -109,7 +114,6 @@ class RabbitMQHandler(MiddlewareHandler):
                 queue=queue_name,
                 on_message_callback=self._wrap_callback(callback)
             )
-
         except self.PIKA_DISCONNECTION_ERRORS as error:
             raise MiddlewareDisconnectedError(str(error)) from error
         except pika.exceptions.AMQPError as error:
@@ -118,36 +122,39 @@ class RabbitMQHandler(MiddlewareHandler):
     def subscribe_to_exchange(
         self,
         exchange_name: str,
-        routing_keys: List[str] = None,
+        routing_keys: Optional[List[str]] = None,
         callback: Callable = None,
+        exchange_type: str = "direct",
     ) -> str:
         """
         Suscribe el middleware a un exchange asociándole su función de callback específica.
-        Declara el exchange y vincula una cola (exclusiva por defecto para cada instancia,
-        o con nombre si se especifica queue_name), conectándola directamente al callback.
+        Declara el exchange y vincula una cola exclusiva, conectándola directamente al callback.
         """
         self._ensure_connected()
         if callback is None or not callable(callback):
             raise ValueError(f"A valid callback function must be provided for exchange '{exchange_name}'")
 
+        r_keys = routing_keys if routing_keys is not None else [""]
+
         try:
-            self.channel.exchange_declare(exchange=exchange_name)
+            self.channel.exchange_declare(exchange=exchange_name, exchange_type=exchange_type, durable=True)
             if exchange_name not in self.exchange_names:
-                self.exchange_names[exchange_name] = routing_keys if routing_keys is not None else [""]
-            result_queue = self.channel.queue_declare(queue='', exclusive=True)
+                self.exchange_names[exchange_name] = r_keys
+
+            result_queue = self.channel.queue_declare(queue="", exclusive=True)
             actual_queue = result_queue.method.queue
-            
+
             if actual_queue not in self.queue_names:
                 self.queue_names.append(actual_queue)
 
-            # Normalizar routing_keys a lista
-            for rk in routing_keys:
+            for rk in r_keys:
                 self.channel.queue_bind(exchange=exchange_name, queue=actual_queue, routing_key=rk)
 
             self.channel.basic_consume(
                 queue=actual_queue,
                 on_message_callback=self._wrap_callback(callback)
             )
+            return actual_queue
 
         except self.PIKA_DISCONNECTION_ERRORS as error:
             raise MiddlewareDisconnectedError(str(error)) from error
@@ -161,16 +168,17 @@ class RabbitMQHandler(MiddlewareHandler):
         """
         self._ensure_connected()
 
-        if not self._subscriptions:
+        if not self.queue_names:
             raise MiddlewareMessageError("No queues registered to consume from")
 
         try:
             self.consuming = True
             self.channel.start_consuming()
-
         except self.PIKA_DISCONNECTION_ERRORS as error:
+            self.close()
             raise MiddlewareDisconnectedError(str(error)) from error
         except pika.exceptions.AMQPError as error:
+            self.close()
             raise MiddlewareMessageError(str(error)) from error
         finally:
             self.consuming = False
@@ -196,65 +204,51 @@ class RabbitMQHandler(MiddlewareHandler):
         self,
         destination: str,
         payload: bytes,
+        routing_keys: Optional[List[str]] = None,
     ) -> None:
         """
         Envía un mensaje al destino especificado.
-        - Si routing_key está presente y no es vacío, o si destination es un exchange conocido:
-          publica al exchange destination con esa routing_key.
-        - Si no se especifica routing_key y destination no fue registrado como exchange:
-          publica directamente a la cola destination utilizando el default exchange de RabbitMQ.
+        - Si routing_keys está presente, publica al exchange destination con cada una de las routing keys.
+        - Si routing_keys no está presente y destination es un exchange conocido, publica con las routing keys registradas del exchange.
+        - Si destination no es un exchange registrado y no hay routing_keys, publica directamente a la cola destination utilizando el default exchange de RabbitMQ.
         """
         self._ensure_connected()
 
-        if destination in self.exchange_names:
-            self._send_to_exchange(destination, payload)
-        elif destination in self.queue_names:
-            self._send_to_queue(destination, payload)
-        else:
-            raise MiddlewareMessageError(f"Destination '{destination}' is neither a registered exchange nor a queue")
-
-    def _send_to_queue(self, queue_name: str, body: bytes) -> None:
-        """
-        Publica un mensaje directamente a la cola especificada.
-        """
         try:
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=queue_name,
-                body=body,
-            )
-        except self.PIKA_DISCONNECTION_ERRORS as error:
-            raise MiddlewareDisconnectedError(str(error)) from error
-        except pika.exceptions.AMQPError as error:
-            raise MiddlewareMessageError(str(error)) from error
-
-    def _send_to_exchange(self, exchange_name: str, body: bytes) -> None:
-        """
-        Publica un mensaje al exchange especificado con la routing_key opcional.
-        """
-        try:
-            routing_keys = self.exchange_names.get(exchange_name, [""])
-            for routing_key in routing_keys:
+            if routing_keys is not None:
+                for rk in routing_keys:
+                    self.channel.basic_publish(
+                        exchange=destination,
+                        routing_key=rk,
+                        body=payload,
+                    )
+            elif destination in self.exchange_names:
+                r_keys = self.exchange_names.get(destination, [""])
+                for rk in r_keys:
+                    self.channel.basic_publish(
+                        exchange=destination,
+                        routing_key=rk,
+                        body=payload,
+                    )
+            else:
                 self.channel.basic_publish(
-                    exchange=exchange_name,
-                    routing_key=routing_key,
-                    body=body,
+                    exchange="",
+                    routing_key=destination,
+                    body=payload,
                 )
         except self.PIKA_DISCONNECTION_ERRORS as error:
             raise MiddlewareDisconnectedError(str(error)) from error
         except pika.exceptions.AMQPError as error:
             raise MiddlewareMessageError(str(error)) from error
 
-
-    # Creo que no se va a necesitar. Se puede hacer lo mismo con un exchange normal (creo).
     def broadcast(
         self,
         exchange: str,
         payload: bytes
     ) -> None:
         """
-        Envía un mensaje en broadcast a todos los suscriptores del exchange.
-        Si el exchange no fue registrado previamente, lo declara como fanout.
+        Envía un mensaje en broadcast a todos los suscriptores del exchange fanout.
+        Si el exchange no fue registrado previamente, lo declara como fanout durable.
         """
         self._ensure_connected()
 
@@ -272,7 +266,6 @@ class RabbitMQHandler(MiddlewareHandler):
                 routing_key="",
                 body=payload,
             )
-
         except self.PIKA_DISCONNECTION_ERRORS as error:
             raise MiddlewareDisconnectedError(str(error)) from error
         except pika.exceptions.AMQPError as error:
@@ -281,15 +274,31 @@ class RabbitMQHandler(MiddlewareHandler):
     def close(self) -> None:
         """
         Cierra canal y conexión liberando recursos.
+        Garantiza que la conexión se cierre limpiamente incluso si cerrar el canal falla.
+        Es idempotente y seguro de llamar múltiples veces.
         """
-        try:
-            if self.consuming:
+        if self.consuming:
+            try:
                 self.stop_consuming()
-            if self.channel and self.channel.is_open:
-                self.channel.close()
-            if self.connection and self.connection.is_open:
-                self.connection.close()
-        except self.PIKA_DISCONNECTION_ERRORS as error:
-            raise MiddlewareDisconnectedError(str(error)) from error
-        except pika.exceptions.AMQPError as error:
-            raise MiddlewareCloseError(str(error)) from error
+            except Exception as e:
+                logger.warning(f"Error stopping consumption during close: {e}")
+
+        # Intentar cerrar el canal
+        if self.channel:
+            try:
+                if self.channel.is_open:
+                    self.channel.close()
+            except Exception as e:
+                logger.warning(f"Error closing RabbitMQ channel: {e}")
+            finally:
+                self.channel = None
+
+        # Intentar cerrar la conexión SIEMPRE, aun si el canal arrojó error
+        if self.connection:
+            try:
+                if self.connection.is_open:
+                    self.connection.close()
+            except Exception as e:
+                logger.warning(f"Error closing RabbitMQ connection: {e}")
+            finally:
+                self.connection = None

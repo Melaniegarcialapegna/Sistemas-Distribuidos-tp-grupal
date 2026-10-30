@@ -1,9 +1,9 @@
 import json
-
+import common.message_protocol.tlv_protocol as tlv
 
 def serialize(message):
-    return json.dumps(message).encode("utf-8")
+    return tlv.serialize_tlv(message)
 
 
 def deserialize(message):
-    return json.loads(message.decode("utf-8"))
+    return tlv.deserialize_tlv(message)

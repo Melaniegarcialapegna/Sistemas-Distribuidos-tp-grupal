@@ -309,6 +309,57 @@ class TestRabbitMQHandler(unittest.TestCase):
         self.assertIsNone(self.handler.channel)
         self.assertIsNone(self.handler.connection)
 
+    # --- Test de callbacks según origen del mensaje ---
+
+    def test_executes_correct_callback_according_to_message_source(self):
+        # dos callbacks espías independientes
+        callback_cola = MagicMock()
+        callback_exchange = MagicMock()
+
+        # Simulamos el nombre de la cola generada para el exchange
+        mock_decl_queue = MagicMock()
+        mock_decl_queue.method.queue = "amq.gen-cola-exchange"
+        self.mock_channel.queue_declare.return_value = mock_decl_queue
+
+        # Nos suscribimos a la cola y al exchange
+        self.handler.subscribe_to_queue("mi_cola", callback_cola)
+        self.handler.subscribe_to_exchange("mi_exchange", callback=callback_exchange)
+
+        # 3. Mapeamos las colas a sus callbacks internos inspeccionando basic_consume
+        # basic_consume fue llamado 2 veces, una para cada suscripción
+        callbacks_por_cola = {}
+        for call in self.mock_channel.basic_consume.call_args_list:
+            cola = call.kwargs["queue"]
+            cb_interno = call.kwargs["on_message_callback"]
+            callbacks_por_cola[cola] = cb_interno
+
+        # Verificamos que se hayan registrado ambas colas con callbacks distintos
+        self.assertIn("mi_cola", callbacks_por_cola)
+        self.assertIn("amq.gen-cola-exchange", callbacks_por_cola)
+        self.assertIsNot(callbacks_por_cola["mi_cola"], callbacks_por_cola["amq.gen-cola-exchange"])
+
+        # --- CASO A: Llega un mensaje a 'mi_cola' ---
+        mock_method_1 = MagicMock(delivery_tag=1)
+        callbacks_por_cola["mi_cola"](self.mock_channel, mock_method_1, None, b"mensaje_de_cola")
+
+        # Verificación: solo debió ejecutarse callback_cola
+        callback_cola.assert_called_once()
+        self.assertEqual(callback_cola.call_args[0][0], b"mensaje_de_cola")
+        callback_exchange.assert_not_called()
+
+        # Limpiamos los contadores para la siguiente prueba
+        callback_cola.reset_mock()
+        callback_exchange.reset_mock()
+
+        # --- CASO B: Llega un mensaje a la cola del exchange ---
+        mock_method_2 = MagicMock(delivery_tag=2)
+        callbacks_por_cola["amq.gen-cola-exchange"](self.mock_channel, mock_method_2, None, b"mensaje_de_exchange")
+
+        # Verificación: solo debió ejecutarse callback_exchange
+        callback_exchange.assert_called_once()
+        self.assertEqual(callback_exchange.call_args[0][0], b"mensaje_de_exchange")
+        callback_cola.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

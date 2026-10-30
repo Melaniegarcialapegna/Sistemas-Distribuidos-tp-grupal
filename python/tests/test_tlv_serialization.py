@@ -1,5 +1,6 @@
 import unittest
-from src.common.message_protocol.tlv_protocol import serialize_tlv, deserialize_tlv, TYPE_REPRESENTATIONS
+
+from src.common.message_protocol.tlv_protocol import serialize_tlv, deserialize_tlv, TYPE_REPRESENTATIONS, VALUE_LENGTH
 
 class TestTLVSerialization(unittest.TestCase):
     def test_serialize_deserialize_int(self):
@@ -36,13 +37,13 @@ class TestTLVSerialization(unittest.TestCase):
         expected_bytes = bytearray()
         int_byte = TYPE_REPRESENTATIONS['INT'].to_bytes(1, 'big')
         string_byte = TYPE_REPRESENTATIONS['STRING'].to_bytes(1, 'big')
-        expected_bytes.extend(int_byte + (42).to_bytes(4, 'big'))
+        expected_bytes.extend(int_byte + (4).to_bytes(4, 'big') + (42).to_bytes(4, 'big'))
         expected_bytes.extend(string_byte + (5).to_bytes(4, 'big') + b'hello')
         self.assertEqual(serialized_data, bytes(expected_bytes))
 
     def test_deserialize_invalid_data(self):
         with self.assertRaises(ValueError):
-            deserialize_tlv(b'\x01\x02' + b'ok' + b'\x00\x00\x00')  # Invalid type byte
+            deserialize_tlv(TYPE_REPRESENTATIONS['STRING'] + (2).to_bytes(VALUE_LENGTH, 'big') + b'ok' + b'\x00\x00\x00')  # Invalid type byte
 
     def test_serialize_deserialize_bytes(self):
         original_data = [b'\x00\x01\x02', b'\x03\x04\x05']
@@ -72,3 +73,7 @@ class TestMessageProtocol(unittest.TestCase):
         serialized_data = serialize_tlv(original_data)
         message = Message.from_bytes(serialized_data)
         self.assertEqual(message.params, original_data)
+
+
+if __name__ == "__main__":
+    unittest.main()

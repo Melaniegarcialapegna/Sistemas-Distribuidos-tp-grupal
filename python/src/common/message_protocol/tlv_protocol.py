@@ -5,6 +5,10 @@ TYPE_REPRESENTATIONS = {
     "FLOAT": 4,
 }
 
+# The length of the length field (not the data) in bytes for all types.
+LENGTH_BYTES = 4
+INT_SIZE = 4
+
 # Pensandolo bien, tener una clase Message para todos los mensajes no tiene mucho sentido, 
 # porque cada mensaje tiene su propia estructura y no hay un mensaje que sea "padre" de todos los demas. 
 # En tal caso cada mensaje deberia tener su propia clase, y que cada clase tenga su propio metodo serialize y deserialize. 
@@ -24,28 +28,8 @@ class Message:
     def from_bytes(data):
         return Message(deserialize_tlv(data))
 
-def serialize_tlv(params):
-    """
-    Serlialize a list of ints and strings into a TLV format.
 
-    :param params: A list of int and string objects to be serialized.
-    :return: A bytes object representing the serialized TLV data.
-    """
-    serialized_data = bytearray()
-    for item in params:
-        if isinstance(item, int):
-            serialized_data.extend(_serialize_int(item))
-        elif isinstance(item, str):
-            serialized_data.extend(_serialize_string(item))
-        elif isinstance(item, bytes):
-            serialized_data.extend(_serialize_bytes(item))
-        elif isinstance(item, float):
-            serialized_data.extend(_serialize_float(item))
-        else:
-            raise ValueError(f"Unsupported type: {type(item)}")
-    return bytes(serialized_data)
-
-def _serialize_string(value):
+def serialize_string(value):
     """
     Serialize a string into a TLV format.
 
@@ -57,7 +41,7 @@ def _serialize_string(value):
     type_byte = TYPE_REPRESENTATIONS['STRING'].to_bytes(1, "big")
     return type_byte + length.to_bytes(4, "big") + encoded_string
 
-def _serialize_int(value):
+def serialize_int(value):
     """
     Serialize an integer into a TLV format.
 
@@ -65,9 +49,10 @@ def _serialize_int(value):
     :return: A bytes object representing the serialized TLV data for the integer.
     """
     type_byte = TYPE_REPRESENTATIONS['INT'].to_bytes(1, "big")
-    return type_byte + value.to_bytes(4, "big")
+    length_bytes = (INT_SIZE).to_bytes(4, "big")
+    return type_byte + length_bytes + value.to_bytes(4, "big")
 
-def _serialize_bytes(value):
+def serialize_bytes(value):
     """
     Serialize a bytes object into a TLV format.
 
@@ -78,7 +63,7 @@ def _serialize_bytes(value):
     type_byte = TYPE_REPRESENTATIONS['BYTES'].to_bytes(1, "big")
     return type_byte + length.to_bytes(4, "big") + value
 
-def _serialize_float(value):
+def serialize_float(value):
     """
     Serialize a float into a TLV format.
 
@@ -90,6 +75,62 @@ def _serialize_float(value):
     # Como es para la Q5 recien se puede posponer por el moemento.
     raise NotImplementedError("Float serialization is not implemented yet.")
 
+SERIALIZATION_METHODS = {
+    int: serialize_int,
+    str: serialize_string,
+    bytes: serialize_bytes,
+    float: serialize_float,
+}
+
+def serialize_tlv(params):
+    """
+    Serlialize a list of ints and strings into a TLV format.
+
+    :param params: A list of int and string objects to be serialized.
+    :return: A bytes object representing the serialized TLV data.
+    """
+    serialized_data = bytearray()
+    for item in params:
+        if type(item) not in SERIALIZATION_METHODS:
+            raise ValueError(f"Unsupported type: {type(item)}")
+        serialized_data.extend(SERIALIZATION_METHODS[type(item)](item))
+    return bytes(serialized_data)
+
+
+def deserialize_string(data):
+    """
+    Deserialize a TLV formatted string.
+
+    :param data: A bytes object representing the serialized TLV data for the string, excluding the type byte.
+    :return: The deserialized string.
+    """
+    return data.decode("utf-8")
+
+def deserialize_int(data):
+    """
+    Deserialize a TLV formatted integer.
+
+    :param data: A bytes object representing the serialized TLV data for the integer, excluding the type byte.
+    :return: The deserialized integer.
+    """
+    return int.from_bytes(data, "big")
+
+def deserialize_float(data):
+    """
+    Deserialize a TLV formatted float.
+
+    :param data: A bytes object representing the serialized TLV data for the float, excluding the type byte.
+    :return: The deserialized float.
+    """
+    # Idem que para serialize_float, no veo como deserializar un float en TLV, porque no hay un formato estandar para eso.
+    raise NotImplementedError("Float deserialization is not implemented yet.")
+
+DESERIALIZATION_METHODS = {
+    TYPE_REPRESENTATIONS['INT']: deserialize_int,
+    TYPE_REPRESENTATIONS['STRING']: deserialize_string,
+    TYPE_REPRESENTATIONS['BYTES']: lambda x: x,  # bytes ya vienen encodeados
+    TYPE_REPRESENTATIONS['FLOAT']: deserialize_float,
+}
 def deserialize_tlv(data):
     """
     Deserialize a TLV formatted bytes object into a list of ints and strings.
@@ -101,58 +142,13 @@ def deserialize_tlv(data):
     index = 0
     while index < len(data):
         type_byte = data[index]
-        if type_byte == TYPE_REPRESENTATIONS['INT']:
-            value, consumed_bytes = _deserialize_int(data[index + 1:])
-            deserialized_data.append(value)
-        elif type_byte == TYPE_REPRESENTATIONS['STRING']:
-            value, consumed_bytes = _deserialize_string(data[index + 1:])
-            deserialized_data.append(value)
-        elif type_byte == TYPE_REPRESENTATIONS['BYTES']:
-            value, consumed_bytes = _deserialize_bytes(data[index + 1:])
-            deserialized_data.append(value)
-        elif type_byte == TYPE_REPRESENTATIONS['FLOAT']:
-            value, consumed_bytes = _deserialize_float(data[index + 1:])
-            deserialized_data.append(value)
-        else:
-            raise ValueError(f"Unsupported type byte: {type_byte}")
-        index += consumed_bytes + 1 # me muevo al siguiente tipo, sumo 1 para el byte de tipo
+        if type_byte not in DESERIALIZATION_METHODS:
+            raise ValueError(f"Unknown type byte: {type_byte}")
+        index += 1
+        length = int.from_bytes(data[index:index + LENGTH_BYTES], "big")
+        index += LENGTH_BYTES
+        data_segment = data[index:index + length]
+        value = DESERIALIZATION_METHODS[type_byte](data_segment)
+        deserialized_data.append(value)
+        index += length
     return deserialized_data
-
-def _deserialize_string(data):
-    """
-    Deserialize a TLV formatted string.
-
-    :param data: A bytes object representing the serialized TLV data for the string, excluding the type byte.
-    :return: The deserialized string.
-    """
-    length = int.from_bytes(data[:4], "big")
-    return data[4:4 + length].decode("utf-8"), length + 4 # Return the amount of bytes consumed (length of string + 4 bytes for length field)
-
-def _deserialize_int(data):
-    """
-    Deserialize a TLV formatted integer.
-
-    :param data: A bytes object representing the serialized TLV data for the integer, excluding the type byte.
-    :return: The deserialized integer.
-    """
-    return int.from_bytes(data[:4], "big"), 4 # Return the amount of bytes consumed (4 bytes for the integer)
-
-def _deserialize_bytes(data):
-    """
-    Deserialize a TLV formatted bytes object.
-
-    :param data: A bytes object representing the serialized TLV data for the bytes, excluding the type byte.
-    :return: The deserialized bytes object.
-    """
-    length = int.from_bytes(data[:4], "big")
-    return data[4:4 + length], length + 4 # Return the amount of bytes consumed (length of bytes + 4 bytes for length field)
-
-def _deserialize_float(data):
-    """
-    Deserialize a TLV formatted float.
-
-    :param data: A bytes object representing the serialized TLV data for the float, excluding the type byte.
-    :return: The deserialized float.
-    """
-    # Idem que para serialize_float, no veo como deserializar un float en TLV, porque no hay un formato estandar para eso.
-    raise NotImplementedError("Float deserialization is not implemented yet.")

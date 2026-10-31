@@ -10,9 +10,10 @@ class MessageHandler:
     def serialize_article_batch(self, records):
         year_items , tokenizer_items = [], []
         for r in records:
-            year_items.append([r["year"], r["url"], r["image"], r["sections"],
+            year = int(r["date_modified"][:4])
+            year_items.append([year, r["url"], r["image"], r["sections"],
                                r["name"], r["date_modified"], r["in_language"]])
-            tokenizer_items.append([r["year"], r["url"], r["abstract"], r["in_language"]])
+            tokenizer_items.append([year, r["url"], r["abstract"], r["in_language"]])
             
         self.sent_articles += len(records)
         return self._batch(year_items), self._batch(tokenizer_items)

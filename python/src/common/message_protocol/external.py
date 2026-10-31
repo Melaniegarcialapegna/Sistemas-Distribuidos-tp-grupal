@@ -2,7 +2,7 @@ from asyncio import IncompleteReadError
 
 from . import external_serializer, tlv_protocol
 
-USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"] 
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"]
 
 class MsgType:
     FRUIT_RECORD = 1 #TODO: borrar

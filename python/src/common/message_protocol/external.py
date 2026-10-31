@@ -1,15 +1,32 @@
 from asyncio import IncompleteReadError
 
-from . import external_serializer
+from . import external_serializer, tlv_protocol
 
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"] 
 
 class MsgType:
-    FRUIT_RECORD = 1
-    FRUIT_TOP = 2
+    FRUIT_RECORD = 1 #TODO: borrar
+    FRUIT_TOP = 2   #TODO: borrar
     ACK = 3
     END_OF_RECODS = 4
     ARTICLE_RECORD_BATCH = 5
+    QUERY_RESULT_BATCH = 6
+    QUERY_DONE = 7
+
+class Query:
+    Q1 , Q2 , Q3 , Q4 , Q5 = 1 , 2 , 3 , 4 , 5
+
+
+def recv_msg(socket):
+    msg_type = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    msg_handler = RECV_MSG_HANDLERS[msg_type]
+    return (msg_type, msg_handler(socket))
+
+def send_msg(socket, msg_type, *args):
+    msg_handler = SEND_MSG_HANDLERS[msg_type]
+    msg_handler(socket, *args)
 
 
 def _recv_sized(socket, size):
@@ -70,23 +87,6 @@ def _recv_article_record_batch(socket):
         batch_data.append(record)
     return batch_data
 
-RECV_MSG_HANDLERS = {
-    MsgType.FRUIT_RECORD: _recv_fruit_record,
-    MsgType.FRUIT_TOP: _recv_fruit_top,
-    MsgType.ACK: _recv_empty,
-    MsgType.END_OF_RECODS: _recv_empty,
-    MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch
-}
-
-
-def recv_msg(socket):
-    msg_type = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    msg_handler = RECV_MSG_HANDLERS[msg_type]
-    return (msg_type, msg_handler(socket))
-
-
 def _serialize_fruit_record(fruit, amount):
     return b"".join(
         [
@@ -130,15 +130,55 @@ def _send_article_record_batch(socket, batch_data):
             parts.append(value)
     socket.sendall(b"".join(parts))
 
+def _recv_query_result_batch(socket):
+    query_id = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+
+    n_rows = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+
+    rows = []
+
+    for _ in range(n_rows):
+        size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+        rows.append(tlv_protocol.deserialize_tlv(_recv_sized(socket, size)))
+
+    return (query_id, rows)
+
+def _recv_query_done(socket):
+    query_id = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+    return query_id
+
+def _send_query_result_batch(socket, query_id, rows):
+    parts = [
+        external_serializer.serialize_uint32(MsgType.QUERY_RESULT_BATCH),
+        external_serializer.serialize_uint32(query_id),
+        external_serializer.serialize_uint32(len(rows)),
+    ]
+    for row in rows:
+        data = tlv_protocol.serialize_tlv(row)
+        parts.append(external_serializer.serialize_uint32(len(data)))
+        parts.append(data)
+    socket.sendall(b"".join(parts))
+
+def _send_query_done(socket, query_id):
+    socket.sendall(external_serializer.serialize_uint32(MsgType.QUERY_DONE) + external_serializer.serialize_uint32(query_id))
+
+
+RECV_MSG_HANDLERS = {
+    MsgType.FRUIT_RECORD: _recv_fruit_record,
+    MsgType.FRUIT_TOP: _recv_fruit_top,
+    MsgType.ACK: _recv_empty,
+    MsgType.END_OF_RECODS: _recv_empty,
+    MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch,
+    MsgType.QUERY_RESULT_BATCH: _recv_query_result_batch,
+    MsgType.QUERY_DONE: _recv_query_done,
+}
+
 SEND_MSG_HANDLERS = {
     MsgType.FRUIT_RECORD: _send_fruit_record,
     MsgType.FRUIT_TOP: _send_fruit_top,
     MsgType.ACK: _send_ack,
-    MsgType.END_OF_RECODS: _send_end_of_records,
-    MsgType.ARTICLE_RECORD_BATCH: _send_article_record_batch
+    MsgType.ARTICLE_RECORD_BATCH: _send_article_record_batch,
+    MsgType.QUERY_RESULT_BATCH: _send_query_result_batch,
+    MsgType.QUERY_DONE: _send_query_done,
 }
 
-
-def send_msg(socket, msg_type, *args):
-    msg_handler = SEND_MSG_HANDLERS[msg_type]
-    msg_handler(socket, *args)

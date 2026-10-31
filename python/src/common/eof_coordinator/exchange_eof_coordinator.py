@@ -9,4 +9,4 @@ class ExchangeEofCoordinator(EofCoordinator):
         client_state.expected_total += count
 
         if self._all_eofs_received(client_state):
-            self._finish_client(client_id, client_state.expected_total) 
+            self._finish_client(client_id) 

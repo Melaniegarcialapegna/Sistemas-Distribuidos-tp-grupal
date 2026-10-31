@@ -3,7 +3,7 @@ from typing import Callable
 
 # callable is a anotation for a function that takes two arguments (str, int) and returns None
 # receives the client_id and the count of messages sent by the previous stage
-BarrierCallback = Callable[[str, int], None]
+BarrierCallback = Callable[[str], None]
 
 # Constants
 ERROR_MUST_IMPLEMENT = "must be implemented in subclasses"
@@ -33,7 +33,7 @@ class EofCoordinator(ABC):
     def on_data_processed(self, client_id, amount):
         pass  
 
-    def on_control(self, control_message):
+    def on_control(self, control_message, client_id):
         pass  
 
     # Helpers
@@ -51,7 +51,7 @@ class EofCoordinator(ABC):
         return client_state.eof_received == self.eofs_expected
     
 
-    def _finish_client(self, client_id, total):
+    def _finish_client(self, client_id):
         self._clients.pop(client_id, None)
-        self._on_barrier(client_id, total)
+        self._on_barrier(client_id)  # Notify the worker that the barrier has been reached
 

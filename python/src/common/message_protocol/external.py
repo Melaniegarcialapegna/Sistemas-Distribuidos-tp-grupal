@@ -1,13 +1,14 @@
 from asyncio import IncompleteReadError
 
 from . import external_serializer
-
+from src.client import USABLE_COLUMNS, ROW_BATCH_SIZE
 
 class MsgType:
     FRUIT_RECORD = 1
     FRUIT_TOP = 2
     ACK = 3
     END_OF_RECODS = 4
+    ARTICLE_RECORD_BATCH = 5
 
 
 def _recv_sized(socket, size):
@@ -50,12 +51,30 @@ def _recv_fruit_top(socket):
 def _recv_empty(socket):
     return None
 
+def _recv_article_record_batch(socket):
+    batch_size = external_serializer.deserialize_uint32(
+        _recv_sized(socket, external_serializer.UINT32_SIZE)
+    )
+    batch_data = []
+    for i in range(batch_size):
+        record = {}
+        for column in USABLE_COLUMNS:
+            column_size = external_serializer.deserialize_uint32(
+                _recv_sized(socket, external_serializer.UINT32_SIZE)
+            )
+            column_value = external_serializer.deserialize_string(
+                _recv_sized(socket, column_size)
+            )
+            record[column] = column_value
+        batch_data.append(record)
+    return batch_data
 
 RECV_MSG_HANDLERS = {
     MsgType.FRUIT_RECORD: _recv_fruit_record,
     MsgType.FRUIT_TOP: _recv_fruit_top,
     MsgType.ACK: _recv_empty,
     MsgType.END_OF_RECODS: _recv_empty,
+    MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch
 }
 
 
@@ -98,12 +117,21 @@ def _send_ack(socket):
 def _send_end_of_records(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
 
+def _send_article_record_batch(socket, batch_data):
+    msg = external_serializer.serialize_uint32(MsgType.ARTICLE_RECORD_BATCH)
+    msg += external_serializer.serialize_uint32(len(batch_data))
+    for record in batch_data:
+        for column in USABLE_COLUMNS:
+            msg += external_serializer.serialize_uint32(len(record[column]))
+            msg += external_serializer.serialize_string(record[column])
+    socket.sendall(msg)
 
 SEND_MSG_HANDLERS = {
     MsgType.FRUIT_RECORD: _send_fruit_record,
     MsgType.FRUIT_TOP: _send_fruit_top,
     MsgType.ACK: _send_ack,
     MsgType.END_OF_RECODS: _send_end_of_records,
+    MsgType.ARTICLE_RECORD_BATCH: _send_article_record_batch
 }
 
 

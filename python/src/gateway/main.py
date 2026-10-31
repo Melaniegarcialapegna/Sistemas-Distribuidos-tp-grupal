@@ -42,7 +42,7 @@ def handle_client_request(client_socket, message_handler,lock):
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
 
-            elif msg_type == external.MsgType.END_OF_RECORDS:
+            elif msg_type == external.MsgType.END_OF_RECODS:
                 eof_message = message_handler.serialize_eof_message()
                 year_filter_queue.send(eof_message)
                 tokenizer_queue.send(eof_message)
@@ -66,7 +66,6 @@ def handle_client_response(client_list):
     def _consume_result(message, ack, nack):
         try:
             dispatcher.handle(message)
-            ack()
         #TODO: poner en dispatcher
         # except socket.error:
         #     logging.error("The connection with the server was lost")

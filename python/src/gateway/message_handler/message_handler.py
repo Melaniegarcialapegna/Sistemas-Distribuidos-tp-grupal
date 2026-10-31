@@ -35,7 +35,7 @@ class MessageHandler:
         return fruit_top
 
     def _batch(self, items):
-        return TLVSerializer.seralize_message(BatchMessageType(items, self.client_id))
+        return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id))
 
     def _eof(self, count):
-        return TLVSerializer.seralize_message(EOFMessageType([count], self.client_id))
+        return TLVSerializer.serialize_message(EOFMessageType([count], self.client_id))

@@ -11,17 +11,16 @@ class ResultsDispatcher:
         self.queries_done = {} #{client_od : finished_queries}
 
     def handle(self, data):
-        message = TLVDeserializer.deserialize_tlv(data)
+        message = TLVDeserializer.deserialize_message(data)
         client_id = message.from_client_id
         client = self._find_client(client_id)
-        query_id = message.query_id 
-
+        
         if client is not None:
             client_socket, lock = client
             try:
-                if message.message_type == BatchMessageType:
+                if isinstance(message, BatchMessageType):
                     self._on_batch(message, client_socket, lock)
-                elif message.message_type == EOFMessageType:
+                elif isinstance(message, EOFMessageType):
                     query_id = message.payload[0]
                     self._on_eof(client_id, query_id, client_socket, lock)
             except OSError:
@@ -49,10 +48,10 @@ class ResultsDispatcher:
                                   query_id, rows)
 
     def _on_eof(self, client_id, query_id, client_socket, lock):
-        received = self.eofs_received.setdefault(query_id, {})
-        received[client_id] = received.get(client_id, 0) + 1
+        received = self.eofs_received.setdefault(client_id, {})
+        received[query_id] = received.get(query_id, 0) + 1
 
-        if received[client_id] >= self.expected_eofs:
+        if received[query_id] >= self.expected_eofs[query_id]:
             with lock:
                 external.send_msg(client_socket, external.MsgType.QUERY_DONE, query_id)
 

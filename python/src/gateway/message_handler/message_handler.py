@@ -20,20 +20,6 @@ class MessageHandler:
     def serialize_eof_message(self):
         return self._eof(self.sent_articles)
 
-    #TODO corregir
-    def deserialize_result_message(self, message):
-        """
-        Deserialize the message and check if it is for this client.
-        In case it is not for this client, returns None, otherwise returns the fruit and amount.
-        """
-        fields = message_protocol.internal.deserialize(message)
-        [id_client,fruit_top] = fields
-
-        if id_client != self.client_id:
-            return None
-        
-        return fruit_top
-
     def _batch(self, items):
         return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id))
 

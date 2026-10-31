@@ -5,20 +5,28 @@ import signal
 import multiprocessing
 import message_handler
 from common import middleware, message_protocol
+from results_dispatcher.result_dispatcher import ResultsDispatcher
 import itertools
 
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["MOM_HOST"]
-INPUT_QUEUE = os.environ["INPUT_QUEUE"]
+RESULTS_QUEUE = os.environ["RESULTS_QUEUE"]
 YEAR_FILTER_QUEUE = os.environ["YEAR_FILTER_QUEUE"]
 TOKENIZER_QUEUE = os.environ["TOKENIZER_QUEUE"]
+
+QUERIES = (1, 2, 3, 4, 5)
+EOFS_EXPECTED = {}
+for q in QUERIES:
+    nombre_variable = f"Q{q}_EOF_EXPECTED"
+    valor = os.environ.get(nombre_variable, "1")
+    EOFS_EXPECTED[q] = int(valor)     
 
 client_id_generator = itertools.count(1)
 
 
-def handle_client_request(client_socket, message_handler):
+def handle_client_request(client_socket, message_handler,lock):
     year_filter_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, YEAR_FILTER_QUEUE)
     tokenizer_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, TOKENIZER_QUEUE)
     external = message_protocol.external
@@ -31,13 +39,15 @@ def handle_client_request(client_socket, message_handler):
                 year_batch, tokenizer_batch = message_handler.serialize_article_batch(data)
                 year_filter_queue.send(year_batch)
                 tokenizer_queue.send(tokenizer_batch)
-                external.send_msg(client_socket, external.MsgType.ACK)
+                with lock:
+                    external.send_msg(client_socket, external.MsgType.ACK)
 
             elif msg_type == external.MsgType.END_OF_RECORDS:
                 eof_message = message_handler.serialize_eof_message()
                 year_filter_queue.send(eof_message)
                 tokenizer_queue.send(eof_message)
-                external.send_msg(client_socket, external.MsgType.ACK)
+                with lock:
+                    external.send_msg(client_socket, external.MsgType.ACK)
                 return
             
     except socket.error:
@@ -50,45 +60,32 @@ def handle_client_request(client_socket, message_handler):
 
 
 def handle_client_response(client_list):
-    input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
+    results_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, RESULTS_QUEUE)
+    dispatcher = ResultsDispatcher(client_list,EOFS_EXPECTED)
 
     def _consume_result(message, ack, nack):
-        client_index = 0
         try:
-            for [message_handler_instance, client_socket] in client_list:
-                deserialized_message = (
-                    message_handler_instance.deserialize_result_message(message)
-                )
-
-                if not deserialized_message:
-                    client_index += 1
-                    continue
-
-                message_protocol.external.send_msg(
-                    client_socket,
-                    message_protocol.external.MsgType.FRUIT_TOP,
-                    deserialized_message,
-                )
-                message_protocol.external.recv_msg(client_socket)
-                break
-            client_list.pop(client_index)
+            dispatcher.handle(message)
             ack()
-        except socket.error:
-            logging.error("The connection with the server was lost")
-            client_list.pop(client_index)
-            ack()
+        #TODO: poner en dispatcher
+        # except socket.error:
+        #     logging.error("The connection with the server was lost")
+        #     client_list.pop(client_index)
+        #     ack()
         except Exception as e:
-            logging.error(e)
-            nack()
-            input_queue.stop_consuming()
-
-    input_queue.start_consuming(_consume_result)
-    input_queue.close()
+            logging.exception(e)
+        ack()
+    try:
+        results_queue.start_consuming(_consume_result)
+    except Exception as e:
+        logging.exception(e) 
+    finally:
+        results_queue.close()
 
 
 def handle_sigterm(server_socket, client_list, sigterm_received):
     server_socket.shutdown(socket.SHUT_RDWR)
-    for [_, client_socket] in client_list:
+    for [_, client_socket,_] in client_list:
         client_socket.shutdown(socket.SHUT_RDWR)
     sigterm_received.value = 1
 
@@ -97,7 +94,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     with multiprocessing.Manager() as manager:
-        client_list = manager.list()
+        client_list = manager.list() # es un proxy de una lista compartida entre procesos
         sigterm_received = manager.Value("c_short", 0)
         with multiprocessing.Pool(processes=os.process_cpu_count()) as processes_pool:
             processes_pool.apply_async(handle_client_response, (client_list,))
@@ -118,10 +115,11 @@ def main():
 
                         logging.info("A new client has connected")
                         message_handler_instance = message_handler.MessageHandler(next(client_id_generator))
-                        client_list.append([message_handler_instance, client_socket])
+                        lock = manager.Lock()
+                        client_list.append([message_handler_instance, client_socket,lock])
                         processes_pool.apply_async(
                             handle_client_request,
-                            (client_socket, message_handler_instance),
+                            (client_socket, message_handler_instance,lock),
                         )
                     except socket.error:
                         if sigterm_received.value == 0:

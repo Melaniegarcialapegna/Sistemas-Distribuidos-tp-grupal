@@ -5,6 +5,7 @@ import signal
 import multiprocessing
 import message_handler
 from common import middleware, message_protocol
+import itertools
 
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
@@ -12,6 +13,8 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
 OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
+
+client_id_generator = itertools.count(1)
 
 
 def handle_client_request(client_socket, message_handler):
@@ -111,7 +114,7 @@ def main():
                         client_socket, _ = server_socket.accept()
 
                         logging.info("A new client has connected")
-                        message_handler_instance = message_handler.MessageHandler()
+                        message_handler_instance = message_handler.MessageHandler(next(client_id_generator))
                         client_list.append([message_handler_instance, client_socket])
                         processes_pool.apply_async(
                             handle_client_request,

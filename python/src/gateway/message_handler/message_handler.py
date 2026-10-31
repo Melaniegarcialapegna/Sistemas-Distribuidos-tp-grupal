@@ -3,16 +3,16 @@ import uuid
 
 class MessageHandler:
 
-    def __init__(self):
-        self.client_id = uuid.uuid4().hex #32 aleatory characters
-        self.fruit_count = 0
+    def __init__(self,client_id):
+        self.client_id = client_id
+        self.articles_sent = 0
     
     def serialize_data_message(self, message):
         """
         Serialize the message adding a client id
         """
         [fruit, amount] = message
-        self.fruit_count += 1
+        self.articles_sent += 1
         return message_protocol.internal.serialize([self.client_id, fruit, amount])
 
     def serialize_eof_message(self, message):

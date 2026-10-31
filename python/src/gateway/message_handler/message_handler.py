@@ -1,35 +1,28 @@
-from common import message_protocol
-import uuid
-
+from common.message_protocol.internal import TLVSerializer
+from common.message_protocol.msgtype import BatchMessageType, EOFMessageType
 class MessageHandler:
 
-    def __init__(self):
-        self.client_id = uuid.uuid4().hex #32 aleatory characters
-        self.fruit_count = 0
+    def __init__(self,client_id):
+        self.client_id = client_id
+        # Counters of how many messages have been sent to each queue
+        self.sent_articles = 0
     
-    def serialize_data_message(self, message):
-        """
-        Serialize the message adding a client id
-        """
-        [fruit, amount] = message
-        self.fruit_count += 1
-        return message_protocol.internal.serialize([self.client_id, fruit, amount])
+    def serialize_article_batch(self, records):
+        year_items , tokenizer_items = [], []
+        for r in records:
+            year = int(r["date_modified"][:4])
+            year_items.append([year, r["url"], r["image"], r["sections"],
+                               r["name"], r["date_modified"], r["in_language"]])
+            tokenizer_items.append([year, r["url"], r["abstract"], r["in_language"]])
+            
+        self.sent_articles += len(records)
+        return self._batch(year_items), self._batch(tokenizer_items)
 
-    def serialize_eof_message(self, message):
-        """
-        Serialize the EOF message adding a client id to know which client sent the EOF message.
-        """
-        return message_protocol.internal.serialize([self.client_id, self.fruit_count])
+    def serialize_eof_message(self):
+        return self._eof(self.sent_articles)
 
-    def deserialize_result_message(self, message):
-        """
-        Deserialize the message and check if it is for this client.
-        In case it is not for this client, returns None, otherwise returns the fruit and amount.
-        """
-        fields = message_protocol.internal.deserialize(message)
-        [id_client,fruit_top] = fields
+    def _batch(self, items):
+        return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id))
 
-        if id_client != self.client_id:
-            return None
-        
-        return fruit_top
+    def _eof(self, count):
+        return TLVSerializer.serialize_message(EOFMessageType([count], self.client_id))

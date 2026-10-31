@@ -41,12 +41,14 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - INPUT_QUEUE=results_queue
     - MOM_HOST=rabbitmq
     - OUTPUT_QUEUE=input_queue
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - RESULTS_QUEUE=results_queue
+    - TOKENIZER_QUEUE=tokenizer_queue
+    - YEAR_FILTER_QUEUE=year_filter_queue
   join:
     build:
       context: ./src/

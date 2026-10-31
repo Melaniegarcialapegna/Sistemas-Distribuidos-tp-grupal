@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.common.message_protocol.tlv_protocol import deserialize_tlv, serialize_tlv
+from .tlv_protocol import deserialize_tlv, serialize_tlv
 
 class MessageType(ABC):
     """

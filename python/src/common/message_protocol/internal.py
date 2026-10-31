@@ -1,6 +1,6 @@
 import json
-import src.common.message_protocol.tlv_protocol as tlv
-from src.common.message_protocol.msgtype import ControlMessageType, EOFMessageType, DataMessageType, BatchMessageType
+from . import tlv_protocol as tlv
+from .msgtype import ControlMessageType, EOFMessageType, DataMessageType, BatchMessageType
 
 MESSAGE_TYPE_REPRESENTATIONS = {
     "EOF": 1,

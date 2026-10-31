@@ -1,7 +1,8 @@
 from asyncio import IncompleteReadError
 
 from . import external_serializer
-from src.client import USABLE_COLUMNS, ROW_BATCH_SIZE
+
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"] 
 
 class MsgType:
     FRUIT_RECORD = 1
@@ -118,13 +119,16 @@ def _send_end_of_records(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
 
 def _send_article_record_batch(socket, batch_data):
-    msg = external_serializer.serialize_uint32(MsgType.ARTICLE_RECORD_BATCH)
-    msg += external_serializer.serialize_uint32(len(batch_data))
+    parts = [
+        external_serializer.serialize_uint32(MsgType.ARTICLE_RECORD_BATCH),
+        external_serializer.serialize_uint32(len(batch_data)),
+    ]
     for record in batch_data:
         for column in USABLE_COLUMNS:
-            msg += external_serializer.serialize_uint32(len(record[column]))
-            msg += external_serializer.serialize_string(record[column])
-    socket.sendall(msg)
+            value = external_serializer.serialize_string(record[column])
+            parts.append(external_serializer.serialize_uint32(len(value)))
+            parts.append(value)
+    socket.sendall(b"".join(parts))
 
 SEND_MSG_HANDLERS = {
     MsgType.FRUIT_RECORD: _send_fruit_record,

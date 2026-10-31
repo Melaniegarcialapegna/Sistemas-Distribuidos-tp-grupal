@@ -1,8 +1,7 @@
 from asyncio import IncompleteReadError
 
-from . import external_serializer, tlv_protocol
-
-USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"]
+from . import external_serializer
+from src.client import USABLE_COLUMNS, ROW_BATCH_SIZE
 
 class MsgType:
     FRUIT_RECORD = 1 #TODO: borrar

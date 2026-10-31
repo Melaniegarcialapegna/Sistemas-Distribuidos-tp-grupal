@@ -12,38 +12,41 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["MOM_HOST"]
 INPUT_QUEUE = os.environ["INPUT_QUEUE"]
-OUTPUT_QUEUE = os.environ["OUTPUT_QUEUE"]
+YEAR_FILTER_QUEUE = os.environ["YEAR_FILTER_QUEUE"]
+TOKENIZER_QUEUE = os.environ["TOKENIZER_QUEUE"]
 
 client_id_generator = itertools.count(1)
 
 
 def handle_client_request(client_socket, message_handler):
-    output_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, OUTPUT_QUEUE)
+    year_filter_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, YEAR_FILTER_QUEUE)
+    tokenizer_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, TOKENIZER_QUEUE)
+    external = message_protocol.external
 
     try:
         while True:
-            message = message_protocol.external.recv_msg(client_socket)
+            msg_type, data = external.recv_msg(client_socket)
 
-            if message[0] == message_protocol.external.MsgType.FRUIT_RECORD:
-                serialized_message = message_handler.serialize_data_message(message[1])
-                output_queue.send(serialized_message)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
+            if msg_type == external.MsgType.ARTICLE_RECORD_BATCH:
+                year_batch, tokenizer_batch = message_handler.serialize_article_batch(data)
+                year_filter_queue.send(year_batch)
+                tokenizer_queue.send(tokenizer_batch)
+                external.send_msg(client_socket, external.MsgType.ACK)
 
-            if message[0] == message_protocol.external.MsgType.END_OF_RECODS:
-                serialized_message = message_handler.serialize_eof_message(message[1])
-                output_queue.send(serialized_message)
-                message_protocol.external.send_msg(
-                    client_socket, message_protocol.external.MsgType.ACK
-                )
+            elif msg_type == external.MsgType.END_OF_RECORDS:
+                eof_message = message_handler.serialize_eof_message()
+                year_filter_queue.send(eof_message)
+                tokenizer_queue.send(eof_message)
+                external.send_msg(client_socket, external.MsgType.ACK)
                 return
+            
     except socket.error:
         logging.error("The connection with the server was lost")
     except Exception as e:
         logging.error(e)
     finally:
-        output_queue.close()
+        year_filter_queue.close()
+        tokenizer_queue.close()
 
 
 def handle_client_response(client_list):

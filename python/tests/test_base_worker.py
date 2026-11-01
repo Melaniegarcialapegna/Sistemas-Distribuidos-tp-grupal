@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/common")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 try:
     import pika
@@ -31,7 +31,7 @@ except ImportError:
     sys.modules["pika.exceptions"] = mock_pika_exceptions
 
 
-from src.common.base_worker.base_worker import BaseWorker
+from common.base_worker import BaseWorker
 
 
 class ConcreteWorker(BaseWorker):
@@ -43,7 +43,7 @@ class ConcreteWorker(BaseWorker):
 
 
 class TestBaseWorker(unittest.TestCase):
-    @patch("src.common.base_worker.base_worker.middleware.RabbitMQHandler")
+    @patch("common.middleware.RabbitMQHandler")
     def setUp(self, mock_handler_cls):
         self.mock_output_handler = MagicMock()
         mock_handler_cls.return_value = self.mock_output_handler

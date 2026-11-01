@@ -2,6 +2,7 @@ import logging
 import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
+from common.message_protocol.external import Query
 
 ENGLISH_LANGUAGE = 'en'
 
@@ -25,18 +26,18 @@ class LanguageFilterWorker(BaseWorker):
         language, url, date = message
         if language == ENGLISH_LANGUAGE:
             q1_projection = language, url, date
-            self.emit(client_id, self.output_queue_name, q1_projection)            
+            self.emit(client_id, self.q1_output_queue_name, q1_projection)            
 
 def main():
     logging.basicConfig(level=logging.INFO)
     host = os.environ["RABBITMQ_HOST"]
     input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    output_queue_name = os.environ["Q1_OUTPUT_QUEUE_NAME"]
+    q1_output_queue_name = os.environ["Q1_OUTPUT_QUEUE_NAME"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
     control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
     control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
-    language_filter_worker = LanguageFilterWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_queue_name)
+    language_filter_worker = LanguageFilterWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name)
     language_filter_worker.start()
     return 0
 

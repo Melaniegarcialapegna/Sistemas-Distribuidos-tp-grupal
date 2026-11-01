@@ -83,7 +83,7 @@ class BaseWorker(ABC):
 
         for queue_name in self.output_queues:
             self.flush_batch(client_id, queue_name)
-            count = client_counts.get(queue_name, 0)
+            count = client_counts.get((queue_name, None), 0)
             if self.result_query_id is None:
                 eof_payload = [count]
             else:

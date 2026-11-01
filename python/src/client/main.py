@@ -50,7 +50,7 @@ class Client:
                 )
 
         message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
+            self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
         )
 
     def recv_results(self):
@@ -62,8 +62,11 @@ class Client:
                 msg_type = result_message[0]
                 payload = result_message[1]
 
-                if msg_type == message_protocol.external.MsgType.RESULT:
-                    print(payload)
+                if msg_type == message_protocol.external.MsgType.QUERY_RESULT_BATCH:
+                    query_id, rows = payload
+                    if query_id == message_protocol.Query.Q1:
+                        for row in rows:
+                            print(f"Language: {row[0]} | URL: {row[1]} | Date: {row[2]}")
                     # send ACK
                     message_protocol.external.send_msg(
                         self.server_socket, message_protocol.external.MsgType.ACK

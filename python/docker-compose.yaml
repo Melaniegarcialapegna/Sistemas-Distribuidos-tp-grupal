@@ -7,7 +7,7 @@ services:
     depends_on:
     - year_filter_0
     environment:
-    - INPUT_FILE=/datasets/test.parquet
+    - INPUT_FILE=/datasets/test2.parquet
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -64,7 +64,6 @@ services:
     - RABBITMQ_HOST=rabbitmq
     - PYTHONUNBUFFERED=1
 
-
   language_filter_0:
     build:
       context: ./src/
@@ -78,5 +77,21 @@ services:
     - INPUT_QUEUE_NAME=article_language_queue
     - Q1_OUTPUT_QUEUE_NAME=results_queue
     - CONTROL_EXCHANGE_NAME=language_filter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+
+  biography_filter_0:
+    build:
+      context: ./src/
+      dockerfile: biography_filter/Dockerfile
+    container_name: biography_filter_0
+    depends_on:
+    - year_filter_0
+    environment:
+    - BATCH_SIZE=100
+    - ID=0
+    - INPUT_QUEUE_NAME=article_sections_queue
+    - Q2_OUTPUT_QUEUE_NAME=results_queue
+    - CONTROL_EXCHANGE_NAME=biography_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import unittest
@@ -45,6 +46,14 @@ from src.common.middleware.middleware_handler import (
 
 
 class TestRabbitMQHandler(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logging.disable(logging.CRITICAL)
+
+    @classmethod
+    def tearDownClass(cls):
+        logging.disable(logging.NOTSET)
 
     def setUp(self):
         # Parcheamos pika.BlockingConnection para aislar completamente de la red

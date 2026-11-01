@@ -10,19 +10,26 @@ try:
     import pika
     import pika.exceptions
 except ImportError:
+    class AMQPError(Exception): pass
+    class AMQPConnectionError(AMQPError): pass
+    class ConnectionClosed(AMQPConnectionError): pass
+    class ConnectionClosedByBroker(ConnectionClosed): pass
+    class StreamLostError(AMQPConnectionError): pass
+    class ChannelWrongStateError(AMQPError): pass
+
     mock_pika = MagicMock()
     mock_pika_exceptions = MagicMock()
+    mock_pika_exceptions.AMQPError = AMQPError
+    mock_pika_exceptions.AMQPConnectionError = AMQPConnectionError
+    mock_pika_exceptions.ConnectionClosed = ConnectionClosed
+    mock_pika_exceptions.ConnectionClosedByBroker = ConnectionClosedByBroker
+    mock_pika_exceptions.StreamLostError = StreamLostError
+    mock_pika_exceptions.ChannelWrongStateError = ChannelWrongStateError
+
     mock_pika.exceptions = mock_pika_exceptions
     sys.modules["pika"] = mock_pika
     sys.modules["pika.exceptions"] = mock_pika_exceptions
 
-try:
-    from src.client import USABLE_COLUMNS, ROW_BATCH_SIZE
-except (ImportError, ModuleNotFoundError):
-    mock_client = MagicMock()
-    mock_client.USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"]
-    mock_client.ROW_BATCH_SIZE = 1000
-    sys.modules["src.client"] = mock_client
 
 from src.common.base_worker.base_worker import BaseWorker
 

@@ -15,6 +15,7 @@ class BaseWorker(ABC):
         self.emitted_counts = {}  # {client_id: {queue_name: count}}
         self.host = host
         self.eof_coordinator = None  # This will be set by subclasses that need EOF coordination
+        self.result_query_id = None  
 
     def start(self):
         try:
@@ -74,8 +75,14 @@ class BaseWorker(ABC):
         client_counts = self.emitted_counts.pop(client_id, {})
         for queue_name, queue in self.output_queues.items():
             self.flush_batch(client_id, queue_name)
+
             count = client_counts.get(queue_name, 0)
-            eof_message = msg.EOFMessageType([count], client_id)
+            if self.result_query_id is None:
+                eof_payload = [count]
+            else:
+                eof_payload = [self.result_query_id]
+            eof_message = msg.EOFMessageType(eof_payload, client_id)
+
             queue.send(message_protocol.internal.TLVSerializer.serialize_message(eof_message))
         self.outgoing_batches.pop(client_id, None)
 

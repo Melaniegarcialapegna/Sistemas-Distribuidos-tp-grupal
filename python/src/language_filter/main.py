@@ -19,13 +19,14 @@ class LanguageFilterWorker(BaseWorker):
         )
         self.input_queue_name = input_queue_name
         self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
+        self.result_query_id = Query.Q1
 
     def process_data(self, client_id, message):
         # Base worker llama a este metodo sobre cada articulo dentro del batch
         # message es una lista con los parametros necesarios para esta etapa del articulo
         language, url, date = message
         if language == ENGLISH_LANGUAGE:
-            q1_projection = language, url, date
+            q1_projection = [self.result_query_id, url, date]
             self.emit(client_id, self.q1_output_queue_name, q1_projection)            
 
 def main():

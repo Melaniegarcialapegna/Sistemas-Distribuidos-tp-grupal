@@ -52,7 +52,11 @@ class Client:
         logging.info("Sending article info")
         parquet_file = pq.ParquetFile(input_file)
         for batch in parquet_file.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
-                batch_data = batch.to_pylist()
+                batch_data = []
+                for r in batch.to_pylist():
+                    r = self._flatten(r)
+                    batch_data.append(r)
+
                 message_protocol.external.send_msg(
                     self.server_socket,
                     message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
@@ -77,7 +81,7 @@ class Client:
                     for row in rows:
                         print(f"Q{query_id}: {row}")
                 elif msg_type == external.MsgType.QUERY_DONE:
-                    logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas")
+                    logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas") 
                     queries_done.add(payload)
                     if queries_done >= EXPECTED_QUERIES:
                         return
@@ -87,6 +91,17 @@ class Client:
             if not self.closed:
                 logging.error(f"Error in receiver: {e}")
 
+
+    #Helpers
+
+    def _flatten(self, record):
+        lang = record.get("in_language")
+        if isinstance(lang, dict):
+            record["in_language"] = lang.get("identifier","")
+        image = record.get("image")
+        if isinstance(image, dict):
+            record["image"] = image.get("content_url","")
+        return record
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)

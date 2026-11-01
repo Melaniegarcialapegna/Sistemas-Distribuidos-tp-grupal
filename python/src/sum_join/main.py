@@ -1,11 +1,28 @@
 import os
 import logging
 from common.base_worker import BaseWorker
+from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
+
+REPLICA_ID = os.environ["REPLICA_ID"]
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
+SUM_JOIN_KEY_PREFIX="sum_join_exchange"
+AVERAGE_KEY_PREFIX="average_exchange"
 
 class SumJoinWorker(BaseWorker):
-    def __init__(self,batch_size, host):
+    def __init__(self, batch_size, host, sum_join_exchange, average_exchange, average_filter_amount):
         super().__init__(batch_size,host)
         self.totals = {} #{client_id: [total_len, total_abstracts]}
+
+        self.average_exchange = average_exchange
+        self.average_routing_keys = [f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(average_filter_amount)]
+
+        self.eof_coordinator = ExchangeEofCoordinator( 
+            replica_id=REPLICA_ID,
+            previous_stage_replicas=PREVIOUS_STAGE_REPLICAS,
+            on_barrier=self._on_barrier,
+        )
+
+        self._create_exchange_input_handler(sum_join_exchange, [f"{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}"])
 
     def process_data(self, client_id, message):
         partial_len, partial_abstracts = message

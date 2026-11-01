@@ -19,7 +19,7 @@ class TLVSerializer:
         """
         Serializa un mensaje en formato TLV.
 
-        :param message: Una lista de elementos a serializar.
+        :param message: Mensaje a serializar.
         :return: Un objeto bytes que representa los datos serializados en formato TLV.
         """
         return message.visit(TLVSerializer())
@@ -38,12 +38,18 @@ class TLVSerializer:
 
     @staticmethod
     def serialize(payload):
+        """
+        Serializa un payload en formato TLV.
+
+        :param payload: El payload a serializar representado como una lista de objetos.
+        :return: Un objeto bytes que representa los datos serializados en formato TLV.
+        """
         return tlv.serialize_tlv(payload)
 
     @staticmethod
     def serialize_batch(payload):
         """
-        Serialize a batch of messages into a single TLV formatted bytes object.
+        Serializa un lote de mensajes en un solo objeto bytes con formato TLV.
         """
         serialized_messages = bytearray()
         for message in payload:
@@ -91,7 +97,10 @@ class TLVDeserializer:
     @staticmethod
     def deserialize_batch(batch_message):
         """
-        Deserialize a batch of TLV formatted messages into a list of messages.
+        Deserializa un lote de mensajes en formato TLV.
+
+        :param batch_message: Un objeto bytes que representa los datos serializados en formato TLV.
+        :return: Una lista de mensajes deserializados.
         """
         num_messages = int.from_bytes(batch_message[:4], 'big')
         messages = []

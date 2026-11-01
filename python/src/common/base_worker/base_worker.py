@@ -10,12 +10,14 @@ class BaseWorker(ABC):
 
     def __init__(self, batch_size, host):
         self.batch_size = batch_size
-        self.outgoing_batches = {}
-        self.output_queues = {}
-        self.emitted_counts = {}  # {client_id: {queue_name: count}}
+        self.outgoing_batches = {}  # {client_id: {target_key: [item1, item2, ...]}}
+        self.output_queues = set()
+        self.output_exchanges = {}  # {exchange_name: [routing_key1, routing_key2, ...]}
+        self.emitted_counts = {}  # {client_id: {target_key: count}}
         self.host = host
-        self.eof_coordinator = None  # This will be set by subclasses that need EOF coordination
-        self.result_query_id = None  
+        self.eof_coordinator = None  # SubclassResponsibility: cada subclase tiene que crear su EOFCoordinator
+        self.output_handler = middleware.RabbitMQHandler(self.host)
+        self.result_query_id = None 
 
     def start(self):
         try:
@@ -27,25 +29,30 @@ class BaseWorker(ABC):
         try:
             self.input_handler.stop_consuming()
             self.input_handler.close()
+            self.output_handler.close()
         except Exception as e:
             logging.exception(f"Error while stopping worker: {e}")
-        
 
-    def emit(self, client_id, queue_name, item):
-        batch = self.outgoing_batches.setdefault(client_id, {}).setdefault(queue_name, []) # outgoing_batches -> {client_id: {queue_name: [item1, item2, ...]}}
+    def emit(self, client_id, destination, item, routing_keys=None):
+        target_key = (destination, tuple(routing_keys) if routing_keys else None)
+        batch = self.outgoing_batches.setdefault(client_id, {}).setdefault(target_key, [])
         batch.append(item)
         queue_counts = self.emitted_counts.setdefault(client_id, {})
-        queue_counts[queue_name] = queue_counts.get(queue_name, 0) + 1
+        queue_counts[target_key] = queue_counts.get(target_key, 0) + 1
         if len(batch) >= self.batch_size:
-            self.flush_batch(client_id, queue_name)
+            self.flush_batch(client_id, destination, routing_keys)
 
-    def flush_batch(self, client_id, queue_name):
-        batch = self.outgoing_batches.get(client_id, {}).pop(queue_name, [])
+    def flush_batch(self, client_id, destination, routing_keys=None):
+        target_key = (destination, tuple(routing_keys) if routing_keys else None)
+        batch = self.outgoing_batches.get(client_id, {}).pop(target_key, [])
         if not batch:
             return 
-        queue = self.output_queues[queue_name]
         message = msg.BatchMessageType(batch, client_id)
-        queue.send(message_protocol.internal.TLVSerializer.serialize_message(message))
+        self.output_handler.send(
+            destination,
+            message_protocol.internal.TLVSerializer.serialize_message(message),
+            routing_keys=routing_keys,
+        )
 
     def _handle_message(self, msg, ack, nack):
         try:
@@ -73,23 +80,42 @@ class BaseWorker(ABC):
 
     def _flush_all(self, client_id):
         client_counts = self.emitted_counts.pop(client_id, {})
-        for queue_name, queue in self.output_queues.items():
-            self.flush_batch(client_id, queue_name)
 
+        for queue_name in self.output_queues:
+            self.flush_batch(client_id, queue_name)
             count = client_counts.get(queue_name, 0)
             if self.result_query_id is None:
                 eof_payload = [count]
             else:
                 eof_payload = [self.result_query_id]
             eof_message = msg.EOFMessageType(eof_payload, client_id)
+            
+            self.output_handler.send(
+                queue_name,
+                message_protocol.internal.TLVSerializer.serialize_message(eof_message),
+            )
 
-            queue.send(message_protocol.internal.TLVSerializer.serialize_message(eof_message))
+        for exchange_name, r_keys in self.output_exchanges.items():
+            for rk in r_keys:
+                self.flush_batch(client_id, exchange_name, routing_keys=[rk])
+                count = client_counts.get((exchange_name, (rk,)), 0)
+                eof_message = msg.EOFMessageType([count], client_id)
+                self.output_handler.send(
+                    exchange_name,
+                    message_protocol.internal.TLVSerializer.serialize_message(eof_message),
+                    routing_keys=[rk],
+                )
         self.outgoing_batches.pop(client_id, None)
 
     def _create_output_queue(self, queue_name):
         if queue_name not in self.output_queues:
-            self.output_queues[queue_name] = middleware.MessageMiddlewareQueueRabbitMQ(self.host, queue_name)
-        return self.output_queues[queue_name]
+            self.output_handler.declare_queue(queue_name)
+            self.output_queues.add(queue_name)
+
+    def _create_output_exchange(self, exchange_name, routing_keys):
+        if exchange_name not in self.output_exchanges:
+            self.output_handler.declare_exchange(exchange_name)
+            self.output_exchanges[exchange_name] = routing_keys
 
     def _create_queue_input_handler(self, queue_name, control_exchange_name, control_routing_key):
         self.control_exchange_name = control_exchange_name

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import unittest
@@ -45,6 +46,14 @@ from src.common.middleware.middleware_handler import (
 
 
 class TestRabbitMQHandler(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logging.disable(logging.CRITICAL)
+
+    @classmethod
+    def tearDownClass(cls):
+        logging.disable(logging.NOTSET)
 
     def setUp(self):
         # Parcheamos pika.BlockingConnection para aislar completamente de la red
@@ -109,6 +118,64 @@ class TestRabbitMQHandler(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.handler.subscribe_to_queue("queue_x", None)
 
+    def test_subscribe_to_queue_twice_raises_error(self):
+        dummy_callback = MagicMock()
+        self.handler.subscribe_to_queue("queue_1", dummy_callback)
+        with self.assertRaises(MiddlewareMessageError):
+            self.handler.subscribe_to_queue("queue_1", dummy_callback)
+
+    def test_subscribe_to_different_queues_allowed(self):
+        dummy_callback_1 = MagicMock()
+        dummy_callback_2 = MagicMock()
+        self.handler.subscribe_to_queue("queue_1", dummy_callback_1)
+        self.handler.subscribe_to_queue("queue_2", dummy_callback_2)
+        self.assertIn("queue_1", self.handler.subscribed_queues)
+        self.assertIn("queue_2", self.handler.subscribed_queues)
+        self.assertEqual(self.mock_channel.basic_consume.call_count, 2)
+
+    # --- Declaración de Colas (Send-Only) ---
+
+    def test_declare_queue_success(self):
+        self.handler.declare_queue("send_only_queue")
+        self.mock_channel.queue_declare.assert_called_once_with(
+            queue="send_only_queue",
+            durable=True,
+        )
+        self.mock_channel.basic_consume.assert_not_called()
+        self.assertNotIn("send_only_queue", self.handler.queue_names)
+
+    def test_declare_queue_idempotent(self):
+        self.handler.declare_queue("send_only_queue")
+        self.handler.declare_queue("send_only_queue")
+        self.assertEqual(self.mock_channel.queue_declare.call_count, 1)
+
+    def test_declare_queue_channel_error(self):
+        self.mock_channel.queue_declare.side_effect = pika.exceptions.AMQPError("Declare error")
+        with self.assertRaises(MiddlewareMessageError):
+            self.handler.declare_queue("err_queue")
+
+    # --- Declaración de Exchanges (Send-Only) ---
+
+    def test_declare_exchange_success(self):
+        self.handler.declare_exchange("send_only_exchange", exchange_type="direct")
+        self.mock_channel.exchange_declare.assert_called_once_with(
+            exchange="send_only_exchange",
+            exchange_type="direct",
+            durable=True,
+        )
+        self.assertIn("send_only_exchange", self.handler.declared_exchanges)
+        self.mock_channel.basic_consume.assert_not_called()
+
+    def test_declare_exchange_idempotent(self):
+        self.handler.declare_exchange("send_only_exchange", exchange_type="direct")
+        self.handler.declare_exchange("send_only_exchange", exchange_type="direct")
+        self.assertEqual(self.mock_channel.exchange_declare.call_count, 1)
+
+    def test_declare_exchange_channel_error(self):
+        self.mock_channel.exchange_declare.side_effect = pika.exceptions.AMQPError("Declare exchange error")
+        with self.assertRaises(MiddlewareMessageError):
+            self.handler.declare_exchange("err_exchange")
+
     # --- Suscripción a Exchanges ---
 
     def test_subscribe_to_exchange_single_key(self):
@@ -157,6 +224,41 @@ class TestRabbitMQHandler(unittest.TestCase):
             routing_key="",
         )
 
+    def test_subscribe_to_exchange_invalid_callback(self):
+        with self.assertRaises(ValueError):
+            self.handler.subscribe_to_exchange("exchange_x", ["key"], callback=None)
+
+    def test_subscribe_to_exchange_duplicate_key_raises_error(self):
+        dummy_callback = MagicMock()
+        mock_decl_queue = MagicMock()
+        mock_decl_queue.method.queue = "amq.gen-1234"
+        self.mock_channel.queue_declare.return_value = mock_decl_queue
+
+        self.handler.subscribe_to_exchange("ex_1", ["k1"], dummy_callback)
+        with self.assertRaises(MiddlewareMessageError):
+            self.handler.subscribe_to_exchange("ex_1", ["k1"], dummy_callback)
+
+    def test_subscribe_to_exchange_different_keys_allowed(self):
+        dummy_callback = MagicMock()
+        mock_decl_queue = MagicMock()
+        mock_decl_queue.method.queue = "amq.gen-1234"
+        self.mock_channel.queue_declare.return_value = mock_decl_queue
+
+        self.handler.subscribe_to_exchange("ex_1", ["k1"], dummy_callback)
+        self.handler.subscribe_to_exchange("ex_1", ["k2"], dummy_callback)
+        self.assertEqual(self.handler.subscribed_exchange_keys["ex_1"], {"k1", "k2"})
+
+    def test_subscribe_to_different_exchanges_allowed(self):
+        dummy_callback = MagicMock()
+        mock_decl_queue = MagicMock()
+        mock_decl_queue.method.queue = "amq.gen-1234"
+        self.mock_channel.queue_declare.return_value = mock_decl_queue
+
+        self.handler.subscribe_to_exchange("ex_1", ["k1"], dummy_callback)
+        self.handler.subscribe_to_exchange("ex_2", ["k2"], dummy_callback)
+        self.assertIn("ex_1", self.handler.subscribed_exchange_keys)
+        self.assertIn("ex_2", self.handler.subscribed_exchange_keys)
+
     # --- Envío de Mensajes (send) ---
 
     def test_send_direct_to_queue(self):
@@ -199,6 +301,20 @@ class TestRabbitMQHandler(unittest.TestCase):
         calls = self.mock_channel.basic_publish.call_args_list
         self.assertEqual(calls[0][1]["routing_key"], "key_1")
         self.assertEqual(calls[1][1]["routing_key"], "key_2")
+
+    def test_send_to_declared_exchange_with_arbitrary_routing_key(self):
+        self.handler.declare_exchange("declared_ex", exchange_type="direct")
+        payload = b"custom_data"
+
+        # Enviamos con una routing key arbitraria
+        self.handler.send(destination="declared_ex", payload=payload, routing_keys=["arbitrary_key"])
+
+        self.mock_channel.basic_publish.assert_called_with(
+            exchange="declared_ex",
+            routing_key="arbitrary_key",
+            body=payload,
+        )
+        self.assertIn("declared_ex", self.handler.declared_exchanges)
 
     def test_send_raises_disconnected_on_pika_error(self):
         self.mock_channel.basic_publish.side_effect = pika.exceptions.StreamLostError("Stream lost")

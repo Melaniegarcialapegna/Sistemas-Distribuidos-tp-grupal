@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 import pika
 import pika.exceptions
 
@@ -42,6 +42,10 @@ class RabbitMQHandler(MiddlewareHandler):
         self.consuming: bool = False
         self.queue_names: List[str] = []
         self.exchange_names: Dict[str, List[str]] = {}
+        self.subscribed_queues: Set[str] = set()
+        self.subscribed_exchange_keys: Dict[str, Set[str]] = {}
+        self.declared_queues: Set[str] = set()
+        self.declared_exchanges: Set[str] = set()
         self.connection: Optional[pika.BlockingConnection] = None
         self.channel: Optional[pika.adapters.blocking_connection.BlockingChannel] = None
 
@@ -98,22 +102,74 @@ class RabbitMQHandler(MiddlewareHandler):
     ) -> None:
         """
         Suscribe el middleware a una cola con nombre asociándole su función de callback específica.
+        No permite suscribirse múltiples veces a la misma cola en este handler.
         Si la cola no existe, la declara como durable.
-        Puede invocarse múltiples veces para escuchar múltiples colas, cada una con su propio callback.
         """
         self._ensure_connected()
+        if queue_name in self.subscribed_queues:
+            raise MiddlewareMessageError(
+                f"Handler already subscribed to queue '{queue_name}'"
+            )
         if callback is None or not callable(callback):
             raise ValueError(f"A valid callback function must be provided for queue '{queue_name}'")
 
         try:
             self.channel.queue_declare(queue=queue_name, durable=True)
-            if queue_name not in self.queue_names:
-                self.queue_names.append(queue_name)
+            self.declared_queues.add(queue_name)
+            self.queue_names.append(queue_name)
+            self.subscribed_queues.add(queue_name)
 
             self.channel.basic_consume(
                 queue=queue_name,
                 on_message_callback=self._wrap_callback(callback)
             )
+        except self.PIKA_DISCONNECTION_ERRORS as error:
+            raise MiddlewareDisconnectedError(str(error)) from error
+        except pika.exceptions.AMQPError as error:
+            raise MiddlewareMessageError(str(error)) from error
+
+    def declare_queue(
+        self,
+        queue_name: str,
+        durable: bool = True
+    ) -> None:
+        """
+        Declara una cola en RabbitMQ asegurando que exista antes de publicar en ella.
+        Es idempotente: si ya fue declarada previamente por este handler, no repite la llamada.
+        """
+        self._ensure_connected()
+        if queue_name in self.declared_queues:
+            return
+
+        try:
+            self.channel.queue_declare(queue=queue_name, durable=durable)
+            self.declared_queues.add(queue_name)
+        except self.PIKA_DISCONNECTION_ERRORS as error:
+            raise MiddlewareDisconnectedError(str(error)) from error
+        except pika.exceptions.AMQPError as error:
+            raise MiddlewareMessageError(str(error)) from error
+
+    def declare_exchange(
+        self,
+        exchange_name: str,
+        exchange_type: str = "direct",
+        durable: bool = True,
+    ) -> None:
+        """
+        Declara un exchange en RabbitMQ para envío (send-only).
+        Es idempotente.
+        """
+        self._ensure_connected()
+        if exchange_name in self.declared_exchanges:
+            return
+
+        try:
+            self.channel.exchange_declare(
+                exchange=exchange_name,
+                exchange_type=exchange_type,
+                durable=durable,
+            )
+            self.declared_exchanges.add(exchange_name)
         except self.PIKA_DISCONNECTION_ERRORS as error:
             raise MiddlewareDisconnectedError(str(error)) from error
         except pika.exceptions.AMQPError as error:
@@ -128,6 +184,7 @@ class RabbitMQHandler(MiddlewareHandler):
     ) -> str:
         """
         Suscribe el middleware a un exchange asociándole su función de callback específica.
+        Permite suscribirse múltiples veces al mismo exchange siempre y cuando se usen routing keys diferentes.
         Declara el exchange y vincula una cola exclusiva, conectándola directamente al callback.
         """
         self._ensure_connected()
@@ -136,16 +193,25 @@ class RabbitMQHandler(MiddlewareHandler):
 
         r_keys = routing_keys if routing_keys is not None else [""]
 
+        subscribed_keys = self.subscribed_exchange_keys.setdefault(exchange_name, set())
+        overlap = set(r_keys).intersection(subscribed_keys)
+        if overlap:
+            raise MiddlewareMessageError(
+                f"Already subscribed to routing key(s) {overlap} on exchange '{exchange_name}'"
+            )
+
         try:
-            self.channel.exchange_declare(exchange=exchange_name, exchange_type=exchange_type, durable=True)
-            if exchange_name not in self.exchange_names:
-                self.exchange_names[exchange_name] = r_keys
+            if exchange_name not in self.declared_exchanges:
+                self.channel.exchange_declare(exchange=exchange_name, exchange_type=exchange_type, durable=True)
+                self.declared_exchanges.add(exchange_name)
+
+            self.exchange_names.setdefault(exchange_name, []).extend(r_keys)
+            subscribed_keys.update(r_keys)
 
             result_queue = self.channel.queue_declare(queue="", exclusive=True)
             actual_queue = result_queue.method.queue
 
-            if actual_queue not in self.queue_names:
-                self.queue_names.append(actual_queue)
+            self.queue_names.append(actual_queue)
 
             for rk in r_keys:
                 self.channel.queue_bind(exchange=exchange_name, queue=actual_queue, routing_key=rk)
@@ -208,9 +274,12 @@ class RabbitMQHandler(MiddlewareHandler):
     ) -> None:
         """
         Envía un mensaje al destino especificado.
-        - Si routing_keys está presente, publica al exchange destination con cada una de las routing keys.
-        - Si routing_keys no está presente y destination es un exchange conocido, publica con las routing keys registradas del exchange.
-        - Si destination no es un exchange registrado y no hay routing_keys, publica directamente a la cola destination utilizando el default exchange de RabbitMQ.
+        - Si routing_keys está presente, publica al exchange destination con cada una de las routing keys
+          (sin modificar el exchange ni sus claves registradas).
+        - Si routing_keys no está presente y destination es un exchange conocido (declarado o suscripto),
+          publica con las routing keys por defecto del exchange.
+        - Si destination no es un exchange y no hay routing_keys, publica directamente a la cola destination
+          utilizando el default exchange de RabbitMQ.
         """
         self._ensure_connected()
 
@@ -222,7 +291,7 @@ class RabbitMQHandler(MiddlewareHandler):
                         routing_key=rk,
                         body=payload,
                     )
-            elif destination in self.exchange_names:
+            elif destination in self.declared_exchanges or destination in self.exchange_names:
                 r_keys = self.exchange_names.get(destination, [""])
                 for rk in r_keys:
                     self.channel.basic_publish(

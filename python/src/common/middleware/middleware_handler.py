@@ -99,36 +99,31 @@ class MiddlewareHandler(ABC):
         """
         pass
 
-    @abstractmethod
-    def subscribe_to_queue(
+    def declare_queue(
+        self,
         queue_name: str,
-        callback: Callable
+        durable: bool = True
     ) -> None:
         """
-        Suscribe el middleware a una cola específica asociándole su propia función de callback.
-        Permite suscribirse a múltiples colas invocando este método sucesivamente con
-        un callback específico para cada una.
+        Declara una cola asegurando que exista antes de publicar en ella (send-only).
 
-        :param queue_name: Nombre de la cola a escuchar.
-        :param callback: Función invocada al recibir un mensaje de esta cola: callback(body, ack, nack).
+        :param queue_name: Nombre de la cola a declarar.
+        :param durable: Si la cola debe persistir a reinicios del broker.
         """
         pass
 
-    def subscribe_to_exchange(
+    def declare_exchange(
         self,
         exchange_name: str,
-        routing_keys: Optional[Union[str, List[str]]] = None,
-        callback: Callable = None,
-        **kwargs
-    ) -> str:
+        exchange_type: str = "direct",
+        durable: bool = True,
+    ) -> None:
         """
-        Suscribe el middleware a un exchange con una o varias routing keys, asociándole
-        su propia función de callback a la cola creada para el exchange.
+        Declara un exchange pero no se suscribe (send-only).
 
-        :param exchange_name: Nombre del exchange a escuchar.
-        :param routing_keys: Clave o lista de claves de enrutamiento para vincular.
-        :param callback: Función invocada al recibir un mensaje de este exchange: callback(body, ack, nack).
-        :return: Nombre de la cola vinculada al exchange.
+        :param exchange_name: Nombre del exchange a declarar.
+        :param exchange_type: Tipo de exchange ("direct", "fanout", "topic").
+        :param durable: Si el exchange debe persistir a reinicios del broker.
         """
         pass
 

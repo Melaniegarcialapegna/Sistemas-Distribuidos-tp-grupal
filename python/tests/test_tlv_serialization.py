@@ -76,6 +76,18 @@ class TestTLVSerialization(unittest.TestCase):
         expected_bytes.extend(bytes_byte + (3).to_bytes(4, 'big') + b'\x00\x01\x02')  # BYTES type
         self.assertEqual(serialized_data, bytes(expected_bytes))
 
+    def test_serialize_deserialize_list(self):
+        original_data = [[42, "hello"], [100, "world"]]
+        serialized_data = serialize_tlv(original_data)
+        deserialized_data = deserialize_tlv(serialized_data)
+        self.assertEqual(original_data, deserialized_data)
+
+    def test_serialize_deserialize_nested_list(self):
+        original_data = [[42, "hello"], [100, ["nested", "list"]]]
+        serialized_data = serialize_tlv(original_data)
+        deserialized_data = deserialize_tlv(serialized_data)
+        self.assertEqual(original_data, deserialized_data)
+
 
 class TestInternalMessages(unittest.TestCase):
     def test_serialize_deserialize_data_message(self):

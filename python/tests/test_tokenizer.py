@@ -63,12 +63,12 @@ class TestTokenizerWorker(unittest.TestCase):
             input_queue_name="input_queue",
             control_routing_key="ctrl_key",
             control_exchange_name="ctrl_ex",
-            q3_4_output_queue="q3_4_queue",
+            repeated_filter_output_queue="repeated_queue",
             q5_output_queue="q5_queue",
         )
 
     def test_init_configures_queues_and_handlers(self):
-        self.assertIn("q3_4_queue", self.worker.output_queues)
+        self.assertIn("repeated_queue", self.worker.output_queues)
         self.assertIn("q5_queue", self.worker.output_queues)
         self.mock_input_handler.subscribe_to_queue.assert_called_once_with(
             "input_queue", self.worker._handle_message
@@ -105,9 +105,9 @@ class TestTokenizerWorker(unittest.TestCase):
         self.assertEqual(self.worker._extract_non_stopwords_from_abstract(""), [])
         self.assertEqual(self.worker._extract_non_stopwords_from_abstract("The is in and"), [])
 
-    def test_process_data_emits_to_q5_and_q3_4(self):
+    def test_process_data_emits_to_q5_and_repeated_filter(self):
         with patch.object(self.worker, "emit") as mock_emit:
-            # "apple" está repetida: 4 palabras en total, 3 únicas
+            # "today" está repetida: 4 palabras en total, 3 únicas
             message = [2021, "http://example.com/art1", "hello world today is today", "en"]
             self.worker.process_data(client_id=1, message=message)
 
@@ -121,16 +121,13 @@ class TestTokenizerWorker(unittest.TestCase):
             self.assertEqual(dest, "q5_queue")
             self.assertEqual(payload, [2021, "http://example.com/art1", 4])
 
-            # Siguientes emit deben ser a Q3_4 con palabras únicas
-            q3_4_calls = [c for c in calls if c[0][1] == "q3_4_queue"]
-            self.assertEqual(len(q3_4_calls), 3)
-
-            emitted_words = {c[0][2][0] for c in q3_4_calls}
-            self.assertEqual(emitted_words, {"hello", "world", "today"})
-
-            # Cada par emitido a Q3_4 debe incluir el idioma
-            for c in q3_4_calls:
-                self.assertEqual(c[0][2][1], "en")
+            # Segundo emit debe ser a repeated_queue con la lista de palabras no-stopwords
+            rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]
+            self.assertEqual(len(rep_calls), 1)
+            client_id, dest, payload = rep_calls[0][0]
+            self.assertEqual(client_id, 1)
+            self.assertEqual(dest, "repeated_queue")
+            self.assertEqual(payload, [["hello", "world", "today", "today"], "en"])
 
     def test_process_data_with_null_abstract(self):
         with patch.object(self.worker, "emit") as mock_emit:
@@ -143,9 +140,9 @@ class TestTokenizerWorker(unittest.TestCase):
             self.assertEqual(len(q5_calls), 1)
             self.assertEqual(q5_calls[0][0][2], [2020, "http://example.com/null", 0])
 
-            # A Q3_4 no se debe emitir ninguna palabra
-            q3_4_calls = [c for c in calls if c[0][1] == "q3_4_queue"]
-            self.assertEqual(len(q3_4_calls), 0)
+            # A repeated_queue no se debe emitir
+            rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]
+            self.assertEqual(len(rep_calls), 0)
 
     def test_process_data_with_only_stopwords(self):
         with patch.object(self.worker, "emit") as mock_emit:
@@ -158,7 +155,7 @@ class TestTokenizerWorker(unittest.TestCase):
             self.assertEqual(len(q5_calls), 1)
             self.assertEqual(q5_calls[0][0][2], [2022, "http://example.com/stopwords", 0])
 
-            # A Q3_4 no se emite ninguna
-            q3_4_calls = [c for c in calls if c[0][1] == "q3_4_queue"]
-            self.assertEqual(len(q3_4_calls), 0)
+            # A repeated_queue no se emite ninguna
+            rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]
+            self.assertEqual(len(rep_calls), 0)
 

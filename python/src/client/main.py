@@ -14,6 +14,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1} # add to config
 
 class Client:
 
@@ -63,24 +64,23 @@ class Client:
         )
 
     def recv_results(self):
+        external = message_protocol.external
+        queries_done = set()
+        rows_per_query = {}
         try:
             while not self.closed:
-                logging.info("Receiving results")
-                result_message = message_protocol.external.recv_msg(self.server_socket)
-                
-                msg_type = result_message[0]
-                payload = result_message[1]
+                msg_type, payload = external.recv_msg(self.server_socket)
 
-                if msg_type == message_protocol.external.MsgType.QUERY_RESULT_BATCH:
-                    logging.info("Resultado query 1")
+                if msg_type == external.MsgType.QUERY_RESULT_BATCH:
                     query_id, rows = payload
-                    if query_id == message_protocol.Query.Q1:
-                        for row in rows:
-                            print(f"Language: {row[0]} | URL: {row[1]} | Date: {row[2]}")
-                    # send ACK
-                    message_protocol.external.send_msg(
-                        self.server_socket, message_protocol.external.MsgType.ACK
-                    )
+                    rows_per_query[query_id] = rows_per_query.get(query_id, 0) + len(rows)
+                    for row in rows:
+                        print(f"Q{query_id}: {row}")
+                elif msg_type == external.MsgType.QUERY_DONE:
+                    logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas")
+                    queries_done.add(payload)
+                    if queries_done >= EXPECTED_QUERIES:
+                        return
                 elif msg_type == message_protocol.external.MsgType.ACK:
                     continue
         except Exception as e:

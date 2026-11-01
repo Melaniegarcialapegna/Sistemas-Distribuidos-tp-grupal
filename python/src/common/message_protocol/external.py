@@ -2,16 +2,15 @@ from asyncio import IncompleteReadError
 
 from . import external_serializer, tlv_protocol
 
-USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"]
+ROW_BATCH_SIZE = 1000 # add to config
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 
 class MsgType:
-    FRUIT_RECORD = 1 #TODO: borrar
-    FRUIT_TOP = 2   #TODO: borrar
-    ACK = 3
-    END_OF_RECODS = 4
-    ARTICLE_RECORD_BATCH = 5
-    QUERY_RESULT_BATCH = 6
-    QUERY_DONE = 7
+    ACK = 1
+    END_OF_RECORDS = 2
+    ARTICLE_RECORD_BATCH = 3
+    QUERY_RESULT_BATCH = 4
+    QUERY_DONE = 5
 
 class Query:
     Q1 , Q2 , Q3 , Q4 , Q5 = 1 , 2 , 3 , 4 , 5
@@ -44,28 +43,6 @@ def _recv_sized(socket, size):
     return bytes(buf)
 
 
-def _recv_fruit_record(socket):
-    fruit_size = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    fruit = external_serializer.deserialize_string(_recv_sized(socket, fruit_size))
-    amount = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    return (fruit, amount)
-
-
-def _recv_fruit_top(socket):
-    fruit_top_size = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    fruit_top = []
-    for i in range(fruit_top_size):
-        fruit_record = _recv_fruit_record(socket)
-        fruit_top.append(fruit_record)
-    return fruit_top
-
-
 def _recv_empty(socket):
     return None
 
@@ -87,28 +64,6 @@ def _recv_article_record_batch(socket):
         batch_data.append(record)
     return batch_data
 
-def _serialize_fruit_record(fruit, amount):
-    return b"".join(
-        [
-            external_serializer.serialize_uint32(len(fruit)),
-            external_serializer.serialize_string(fruit),
-            external_serializer.serialize_uint32(amount),
-        ]
-    )
-
-
-def _send_fruit_record(socket, fruit, amount):
-    msg = external_serializer.serialize_uint32(MsgType.FRUIT_RECORD)
-    msg += _serialize_fruit_record(fruit, amount)
-    socket.sendall(msg)
-
-
-def _send_fruit_top(socket, fruit_top):
-    msg = external_serializer.serialize_uint32(MsgType.FRUIT_TOP)
-    msg += external_serializer.serialize_uint32(len(fruit_top))
-    for fruit_record in fruit_top:
-        msg += _serialize_fruit_record(*fruit_record)
-    socket.sendall(msg)
 
 
 def _send_ack(socket):
@@ -116,7 +71,7 @@ def _send_ack(socket):
 
 
 def _send_end_of_records(socket):
-    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
+    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECORDS))
 
 def _send_article_record_batch(socket, batch_data):
     parts = [
@@ -125,7 +80,12 @@ def _send_article_record_batch(socket, batch_data):
     ]
     for record in batch_data:
         for column in USABLE_COLUMNS:
-            value = external_serializer.serialize_string(record[column])
+            val = record[column]
+
+            if not isinstance(val, str):
+                val = str(val) if val is not None else ""
+
+            value = external_serializer.serialize_string(val)
             parts.append(external_serializer.serialize_uint32(len(value)))
             parts.append(value)
     socket.sendall(b"".join(parts))
@@ -164,19 +124,16 @@ def _send_query_done(socket, query_id):
 
 
 RECV_MSG_HANDLERS = {
-    MsgType.FRUIT_RECORD: _recv_fruit_record,
-    MsgType.FRUIT_TOP: _recv_fruit_top,
     MsgType.ACK: _recv_empty,
-    MsgType.END_OF_RECODS: _recv_empty,
+    MsgType.END_OF_RECORDS: _recv_empty,
     MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch,
     MsgType.QUERY_RESULT_BATCH: _recv_query_result_batch,
     MsgType.QUERY_DONE: _recv_query_done,
 }
 
 SEND_MSG_HANDLERS = {
-    MsgType.FRUIT_RECORD: _send_fruit_record,
-    MsgType.FRUIT_TOP: _send_fruit_top,
     MsgType.ACK: _send_ack,
+    MsgType.END_OF_RECORDS: _send_end_of_records,
     MsgType.ARTICLE_RECORD_BATCH: _send_article_record_batch,
     MsgType.QUERY_RESULT_BATCH: _send_query_result_batch,
     MsgType.QUERY_DONE: _send_query_done,

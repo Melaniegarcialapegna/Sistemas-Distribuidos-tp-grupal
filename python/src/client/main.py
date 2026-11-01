@@ -8,13 +8,13 @@ import pyarrow.parquet as pq
 from common import message_protocol
 
 INPUT_FILE = os.environ["INPUT_FILE"]
-OUTPUT_FILE = os.environ["OUTPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1} # add to config
 
 class Client:
 
@@ -32,7 +32,17 @@ class Client:
 
     def connect(self, server_host, server_port):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.connect((server_host, server_port))
+        import time
+        
+        # Aca intenta conectarse varias veces. Es medio raro habria que revisarlo. 
+        while not self.closed:
+            try:
+                self.server_socket.connect((server_host, server_port))
+                logging.info("¡Conectado exitosamente al Gateway!")
+                break
+            except socket.error:
+                logging.info("Esperando a que el Gateway esté disponible...")
+                time.sleep(1)
 
     def disconnect(self):
         if self.server_socket:
@@ -42,7 +52,11 @@ class Client:
         logging.info("Sending article info")
         parquet_file = pq.ParquetFile(input_file)
         for batch in parquet_file.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
-                batch_data = batch.to_pylist()
+                batch_data = []
+                for r in batch.to_pylist():
+                    r = self._flatten(r)
+                    batch_data.append(r)
+
                 message_protocol.external.send_msg(
                     self.server_socket,
                     message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
@@ -50,34 +64,51 @@ class Client:
                 )
 
         message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
+            self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
         )
 
     def recv_results(self):
+        external = message_protocol.external
+        queries_done = set()
+        rows_per_query = {}
         try:
             while not self.closed:
-                logging.info("Receiving results")
-                result_message = message_protocol.external.recv_msg(self.server_socket)
-                
-                msg_type = result_message[0]
-                payload = result_message[1]
+                msg_type, payload = external.recv_msg(self.server_socket)
 
-                if msg_type == message_protocol.external.MsgType.RESULT:
-                    print(payload)
-                    # send ACK
-                    message_protocol.external.send_msg(
-                        self.server_socket, message_protocol.external.MsgType.ACK
-                    )
+                if msg_type == external.MsgType.QUERY_RESULT_BATCH:
+                    query_id, rows = payload
+                    rows_per_query[query_id] = rows_per_query.get(query_id, 0) + len(rows)
+                    for row in rows:
+                        print(f"Q{query_id}: {row}")
+                elif msg_type == external.MsgType.QUERY_DONE:
+                    logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas") 
+                    queries_done.add(payload)
+                    if queries_done >= EXPECTED_QUERIES:
+                        return
+                elif msg_type == message_protocol.external.MsgType.ACK:
+                    continue
         except Exception as e:
             if not self.closed:
                 logging.error(f"Error in receiver: {e}")
 
+
+    #Helpers
+
+    def _flatten(self, record):
+        lang = record.get("in_language")
+        if isinstance(lang, dict):
+            record["in_language"] = lang.get("identifier","")
+        image = record.get("image")
+        if isinstance(image, dict):
+            record["image"] = image.get("content_url","")
+        return record
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     client = Client()
 
     try:
+        logging.info("Conectando")
         client.connect(SERVER_HOST, SERVER_PORT)
 
         receiver_thread = threading.Thread(target=client.recv_results)

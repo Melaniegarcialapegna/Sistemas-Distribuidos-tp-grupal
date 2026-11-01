@@ -11,7 +11,7 @@ import itertools
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
-MOM_HOST = os.environ["MOM_HOST"]
+MOM_HOST = os.environ["RABBITMQ_HOST"]
 RESULTS_QUEUE = os.environ["RESULTS_QUEUE"]
 YEAR_FILTER_QUEUE = os.environ["YEAR_FILTER_QUEUE"]
 TOKENIZER_QUEUE = os.environ["TOKENIZER_QUEUE"]
@@ -35,6 +35,8 @@ def handle_client_request(client_socket, message_handler,lock):
         while True:
             msg_type, data = external.recv_msg(client_socket)
 
+            logging.info(f"Se recibio un mensaje del cliente {msg_type}")
+
             if msg_type == external.MsgType.ARTICLE_RECORD_BATCH:
                 year_batch, tokenizer_batch = message_handler.serialize_article_batch(data)
                 year_filter_queue.send(year_batch)
@@ -42,13 +44,13 @@ def handle_client_request(client_socket, message_handler,lock):
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
 
-            elif msg_type == external.MsgType.END_OF_RECODS:
+            elif msg_type == external.MsgType.END_OF_RECORDS:
                 eof_message = message_handler.serialize_eof_message()
                 year_filter_queue.send(eof_message)
                 tokenizer_queue.send(eof_message)
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
-                return
+                break
             
     except socket.error:
         logging.error("The connection with the server was lost")

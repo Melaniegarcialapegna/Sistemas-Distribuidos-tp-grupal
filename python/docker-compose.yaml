@@ -1,37 +1,18 @@
 services:
-  aggregation_0:
-    build:
-      context: ./src/
-      dockerfile: aggregation/Dockerfile
-    container_name: aggregation_0
-    depends_on:
-    - join
-    environment:
-    - AGGREGATION_AMOUNT=1
-    - AGGREGATION_PREFIX=aggregation
-    - ID=0
-    - MOM_HOST=rabbitmq
-    - OUTPUT_QUEUE=join_queue
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=1
-    - SUM_PREFIX=sum
-    - TOP_SIZE=3
   client_0:
     build:
       context: ./src/
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - sum_0
+    - year_filter_0
     environment:
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/test.parquet
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
-    - ./output:/output
   gateway:
     build:
       context: ./src/
@@ -41,7 +22,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - MOM_HOST=rabbitmq
+    - RABBITMQ_HOST=rabbitmq
     - OUTPUT_QUEUE=input_queue
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -49,23 +30,6 @@ services:
     - RESULTS_QUEUE=results_queue
     - TOKENIZER_QUEUE=tokenizer_queue
     - YEAR_FILTER_QUEUE=year_filter_queue
-  join:
-    build:
-      context: ./src/
-      dockerfile: join/Dockerfile
-    container_name: join
-    depends_on:
-    - gateway
-    environment:
-    - AGGREGATION_AMOUNT=1
-    - AGGREGATION_PREFIX=aggregation
-    - INPUT_QUEUE=join_queue
-    - MOM_HOST=rabbitmq
-    - OUTPUT_QUEUE=results_queue
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=1
-    - SUM_PREFIX=sum
-    - TOP_SIZE=3
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -82,19 +46,37 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-  sum_0:
+  year_filter_0:
     build:
       context: ./src/
-      dockerfile: sum/Dockerfile
-    container_name: sum_0
+      dockerfile: year_filter/Dockerfile
+    container_name: year_filter_0
     depends_on:
-    - aggregation_0
+    - gateway
     environment:
-    - AGGREGATION_AMOUNT=1
-    - AGGREGATION_PREFIX=aggregation
+    - BATCH_SIZE=100
     - ID=0
-    - INPUT_QUEUE=input_queue
-    - MOM_HOST=rabbitmq
+    - INPUT_QUEUE_NAME=year_filter_queue
+    - Q1_OUTPUT_QUEUE_NAME=article_language_queue
+    - Q2_OUTPUT_QUEUE_NAME=article_sections_queue
+    - CONTROL_EXCHANGE_NAME=year_filter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
     - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=1
-    - SUM_PREFIX=sum
+
+
+  language_filter_0:
+    build:
+      context: ./src/
+      dockerfile: language_filter/Dockerfile
+    container_name: language_filter_0
+    depends_on:
+    - year_filter_0
+    environment:
+    - BATCH_SIZE=100
+    - ID=0
+    - INPUT_QUEUE_NAME=article_language_queue
+    - Q1_OUTPUT_QUEUE_NAME=results_queue
+    - CONTROL_EXCHANGE_NAME=language_filter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq

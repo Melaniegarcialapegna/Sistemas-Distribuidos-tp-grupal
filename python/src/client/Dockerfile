@@ -1,5 +1,6 @@
 FROM python:3-alpine
 RUN pip3 install pika
+RUN pip3 install pyarrow
 
 COPY common ./common
 COPY client .

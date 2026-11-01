@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import logging
-import middleware, message_protocol
-import message_protocol.internal
-import message_protocol.msgtype as msg
+
+from common import middleware, message_protocol
+from common.message_protocol import internal
+from common.message_protocol import msgtype as msg
 
 
 class BaseWorker(ABC):
@@ -16,6 +17,7 @@ class BaseWorker(ABC):
         self.host = host
         self.eof_coordinator = None  # SubclassResponsibility: cada subclase tiene que crear su EOFCoordinator
         self.output_handler = middleware.RabbitMQHandler(self.host)
+        self.result_query_id = None 
 
     def start(self):
         try:
@@ -82,7 +84,12 @@ class BaseWorker(ABC):
         for queue_name in self.output_queues:
             self.flush_batch(client_id, queue_name)
             count = client_counts.get((queue_name, None), 0)
-            eof_message = msg.EOFMessageType([count], client_id)
+            if self.result_query_id is None:
+                eof_payload = [count]
+            else:
+                eof_payload = [self.result_query_id]
+            eof_message = msg.EOFMessageType(eof_payload, client_id)
+            
             self.output_handler.send(
                 queue_name,
                 message_protocol.internal.TLVSerializer.serialize_message(eof_message),
@@ -98,7 +105,6 @@ class BaseWorker(ABC):
                     message_protocol.internal.TLVSerializer.serialize_message(eof_message),
                     routing_keys=[rk],
                 )
-
         self.outgoing_batches.pop(client_id, None)
 
     def _create_output_queue(self, queue_name):

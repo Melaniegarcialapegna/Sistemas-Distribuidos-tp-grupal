@@ -1,4 +1,4 @@
-from eof_coordinator_base import EofCoordinator
+from .eof_coordinator_base import EofCoordinator
 class ExchangeEofCoordinator(EofCoordinator):
     def on_eof(self, client_id, count):
         """

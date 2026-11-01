@@ -6,9 +6,10 @@ from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 ENGLISH_LANGUAGE = 'en'
 
 class LanguageFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, output_queue_name, control_routing_key, control_exchange_name):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name):
         super().__init__(batch_size, host)
-        self._create_output_queue(output_queue_name)
+        self._create_output_queue(q1_output_queue_name)
+        self.q1_output_queue_name = q1_output_queue_name
         self.eof_coordinator = QueueEofCoordinator(
             replica_id=os.environ.get("REPLICA_ID", "default_replica"),
             previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
@@ -30,12 +31,12 @@ def main():
     logging.basicConfig(level=logging.INFO)
     host = os.environ["RABBITMQ_HOST"]
     input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    output_queue_name = os.environ["OUTPUT_QUEUE_NAME"]
+    output_queue_name = os.environ["Q1_OUTPUT_QUEUE_NAME"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
     control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
     control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
-    language_filter_worker = LanguageFilterWorker(batch_size, host, input_queue_name, output_queue_name, control_routing_key, control_exchange_name)
+    language_filter_worker = LanguageFilterWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_queue_name)
     language_filter_worker.start()
     return 0
 

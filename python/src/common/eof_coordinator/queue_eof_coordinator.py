@@ -1,4 +1,4 @@
-from eof_coordinator_base import EofCoordinator
+from .eof_coordinator_base import EofCoordinator
 from typing import Callable
 
 # Constants

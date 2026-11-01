@@ -1,9 +1,9 @@
 from asyncio import IncompleteReadError
 
-from python.src.common.message_protocol import tlv_protocol
+from . import external_serializer, tlv_protocol
 
-from . import external_serializer
-from src.client import USABLE_COLUMNS, ROW_BATCH_SIZE
+ROW_BATCH_SIZE = 1000 # add to config
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 
 class MsgType:
     ACK = 1
@@ -71,7 +71,7 @@ def _send_ack(socket):
 
 
 def _send_end_of_records(socket):
-    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECODS))
+    socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECORDS))
 
 def _send_article_record_batch(socket, batch_data):
     parts = [
@@ -80,7 +80,12 @@ def _send_article_record_batch(socket, batch_data):
     ]
     for record in batch_data:
         for column in USABLE_COLUMNS:
-            value = external_serializer.serialize_string(record[column])
+            val = record[column]
+
+            if not isinstance(val, str):
+                val = str(val) if val is not None else ""
+
+            value = external_serializer.serialize_string(val)
             parts.append(external_serializer.serialize_uint32(len(value)))
             parts.append(value)
     socket.sendall(b"".join(parts))
@@ -120,7 +125,7 @@ def _send_query_done(socket, query_id):
 
 RECV_MSG_HANDLERS = {
     MsgType.ACK: _recv_empty,
-    MsgType.END_OF_RECODS: _recv_empty,
+    MsgType.END_OF_RECORDS: _recv_empty,
     MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch,
     MsgType.QUERY_RESULT_BATCH: _recv_query_result_batch,
     MsgType.QUERY_DONE: _recv_query_done,
@@ -128,6 +133,7 @@ RECV_MSG_HANDLERS = {
 
 SEND_MSG_HANDLERS = {
     MsgType.ACK: _send_ack,
+    MsgType.END_OF_RECORDS: _send_end_of_records,
     MsgType.ARTICLE_RECORD_BATCH: _send_article_record_batch,
     MsgType.QUERY_RESULT_BATCH: _send_query_result_batch,
     MsgType.QUERY_DONE: _send_query_done,

@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import logging
-import middleware, message_protocol
-import message_protocol.internal
-import message_protocol.msgtype as msg
+
+from common import middleware, message_protocol
+from common.message_protocol import internal
+from common.message_protocol import msgtype as msg
 
 
 class BaseWorker(ABC):

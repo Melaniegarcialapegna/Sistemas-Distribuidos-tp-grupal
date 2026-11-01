@@ -8,13 +8,12 @@ import pyarrow.parquet as pq
 from common import message_protocol
 
 INPUT_FILE = os.environ["INPUT_FILE"]
-OUTPUT_FILE = os.environ["OUTPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 
 ROW_BATCH_SIZE = 1000 # add to config
-USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract"] 
+USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 
 class Client:
 
@@ -32,7 +31,17 @@ class Client:
 
     def connect(self, server_host, server_port):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.connect((server_host, server_port))
+        import time
+        
+        # Aca intenta conectarse varias veces. Es medio raro habria que revisarlo. 
+        while not self.closed:
+            try:
+                self.server_socket.connect((server_host, server_port))
+                logging.info("¡Conectado exitosamente al Gateway!")
+                break
+            except socket.error:
+                logging.info("Esperando a que el Gateway esté disponible...")
+                time.sleep(1)
 
     def disconnect(self):
         if self.server_socket:
@@ -63,6 +72,7 @@ class Client:
                 payload = result_message[1]
 
                 if msg_type == message_protocol.external.MsgType.QUERY_RESULT_BATCH:
+                    logging.info("Resultado query 1")
                     query_id, rows = payload
                     if query_id == message_protocol.Query.Q1:
                         for row in rows:
@@ -71,6 +81,8 @@ class Client:
                     message_protocol.external.send_msg(
                         self.server_socket, message_protocol.external.MsgType.ACK
                     )
+                elif msg_type == message_protocol.external.MsgType.ACK:
+                    continue
         except Exception as e:
             if not self.closed:
                 logging.error(f"Error in receiver: {e}")
@@ -81,6 +93,7 @@ def main() -> int:
     client = Client()
 
     try:
+        logging.info("Conectando")
         client.connect(SERVER_HOST, SERVER_PORT)
 
         receiver_thread = threading.Thread(target=client.recv_results)

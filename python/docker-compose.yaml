@@ -5,7 +5,7 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - gateway
+    - year_filter_0
     environment:
     - INPUT_FILE=/datasets/test.parquet
     - PYTHONUNBUFFERED=1
@@ -22,7 +22,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - MOM_HOST=rabbitmq
+    - RABBITMQ_HOST=rabbitmq
     - OUTPUT_QUEUE=input_queue
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -61,14 +61,14 @@ services:
     - Q2_OUTPUT_QUEUE_NAME=article_sections_queue
     - CONTROL_EXCHANGE_NAME=year_filter_control
     - CONTROL_ROUTING_KEY=
-    - MOM_HOST=rabbitmq
+    - RABBITMQ_HOST=rabbitmq
     - PYTHONUNBUFFERED=1
 
 
   language_filter_0:
     build:
       context: ./src/
-      dockerfile: year_filter/Dockerfile
+      dockerfile: language_filter/Dockerfile
     container_name: language_filter_0
     depends_on:
     - year_filter_0
@@ -76,7 +76,7 @@ services:
     - BATCH_SIZE=100
     - ID=0
     - INPUT_QUEUE_NAME=article_language_queue
-    - OUTPUT_QUEUE_NAME=results_queue
+    - Q1_OUTPUT_QUEUE_NAME=results_queue
     - CONTROL_EXCHANGE_NAME=language_filter_control
     - CONTROL_ROUTING_KEY=
-    - MOM_HOST=rabbitmq
+    - RABBITMQ_HOST=rabbitmq

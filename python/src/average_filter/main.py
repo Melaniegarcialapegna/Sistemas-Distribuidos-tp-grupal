@@ -9,7 +9,6 @@ class AverageFilterWorker(BaseWorker):
         super().__init__(batch_size,host)
 
 
-
 def main():
     logging.basicConfig(level=logging.INFO)
 

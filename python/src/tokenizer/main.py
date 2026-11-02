@@ -6,16 +6,18 @@ from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 
 WORD_ONLY_REGEX = re.compile(r'\b[^\W\d_]+\b')
+YEAR_FILTER = 2020
 
 class TokenizerWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_old_queue, q5_recent_queue):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_sum_queue, q5_average_filter_queue):
         super().__init__(batch_size, host)
         self._create_output_queue(repeated_filter_output_queue)
-        self._create_output_queue(q5_old_queue)
-        self._create_output_queue(q5_recent_queue)
+        self._create_output_queue(q5_sum_queue)
+        self._create_output_queue(q5_average_filter_queue)
         self.repeated_filter_output_queue = repeated_filter_output_queue
-        self.q5_old_queue = q5_old_queue
-        self.q5_recent_queue = q5_recent_queue
+        self.q5_old_queue = q5_sum_queue # to Sum
+        self.q5_recent_queue = q5_average_filter_queue # to Average filter
+
         self.eof_coordinator = QueueEofCoordinator(
             replica_id=os.environ.get("REPLICA_ID", "default_replica"),
             previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
@@ -33,10 +35,10 @@ class TokenizerWorker(BaseWorker):
         year, url, abstract, in_language = message
         filtered_abstract = self._extract_non_stopwords_from_abstract(abstract)
         length = len(filtered_abstract)
-        if year <= 2020:
-            self.emit(client_id,self.q5_old_queue,[length]) # to Sum
+        if year <= YEAR_FILTER:
+            self.emit(client_id,self.q5_old_queue,[length]) 
         else:
-            self.emit(client_id,self.q5_recent_queue,[url,length]) # to Average filter
+            self.emit(client_id,self.q5_recent_queue,[url,length]) 
         if filtered_abstract:
             self.emit(client_id, self.repeated_filter_output_queue, [filtered_abstract, in_language])
 
@@ -52,13 +54,13 @@ def main():
     host = os.environ["RABBITMQ_HOST"]
     input_queue_name = os.environ["INPUT_QUEUE_NAME"]
     repeated_filter_output_queue = os.environ.get("REPEATED_FILTER_OUTPUT_QUEUE_NAME") or os.environ.get("Q3_4_OUTPUT_QUEUE_NAME")
-    q5_old_queue = os.environ["Q5_OLD_OUTPUT_QUEUE_NAME"]
-    q5_recent_queue = os.environ["Q5_RECENT_OUTPUT_QUEUE_NAME"]
+    q5_sum_queue = os.environ["Q5_SUM_OUTPUT_QUEUE_NAME"]
+    q5_average_filter_queue = os.environ["Q5_AVERAGE_FILTER_OUTPUT_QUEUE_NAME"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
     control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
     control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
-    tokenizer_worker = TokenizerWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_old_queue, q5_recent_queue)
+    tokenizer_worker = TokenizerWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_sum_queue, q5_average_filter_queue)
     tokenizer_worker.start()
     return 0
 

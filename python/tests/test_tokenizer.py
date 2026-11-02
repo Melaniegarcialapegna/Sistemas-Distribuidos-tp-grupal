@@ -64,12 +64,14 @@ class TestTokenizerWorker(unittest.TestCase):
             control_routing_key="ctrl_key",
             control_exchange_name="ctrl_ex",
             repeated_filter_output_queue="repeated_queue",
-            q5_output_queue="q5_queue",
+            q5_sum_queue="q5_sum_queue",
+            q5_average_filter_queue="q5_recent_queue",
         )
 
     def test_init_configures_queues_and_handlers(self):
         self.assertIn("repeated_queue", self.worker.output_queues)
-        self.assertIn("q5_queue", self.worker.output_queues)
+        self.assertIn("q5_sum_queue", self.worker.output_queues)
+        self.assertIn("q5_recent_queue", self.worker.output_queues)
         self.mock_input_handler.subscribe_to_queue.assert_called_once_with(
             "input_queue", self.worker._handle_message
         )
@@ -113,13 +115,13 @@ class TestTokenizerWorker(unittest.TestCase):
 
             calls = mock_emit.call_args_list
 
-            # Primer emit debe ser a Q5 con el conteo de palabras (incluyendo repetidas = 4)
-            q5_calls = [c for c in calls if c[0][1] == "q5_queue"]
-            self.assertEqual(len(q5_calls), 1)
-            client_id, dest, payload = q5_calls[0][0]
+            # Primer emit debe ser a Q5 recent queue (año 2021 > 2020) con [url, length] (4 palabras)
+            recent_calls = [c for c in calls if c[0][1] == "q5_recent_queue"]
+            self.assertEqual(len(recent_calls), 1)
+            client_id, dest, payload = recent_calls[0][0]
             self.assertEqual(client_id, 1)
-            self.assertEqual(dest, "q5_queue")
-            self.assertEqual(payload, [2021, "http://example.com/art1", 4])
+            self.assertEqual(dest, "q5_recent_queue")
+            self.assertEqual(payload, ["http://example.com/art1", 4])
 
             # Segundo emit debe ser a repeated_queue con la lista de palabras no-stopwords
             rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]
@@ -135,10 +137,10 @@ class TestTokenizerWorker(unittest.TestCase):
             self.worker.process_data(client_id=1, message=message)
 
             calls = mock_emit.call_args_list
-            # A Q5 se debe emitir con 0 palabras
-            q5_calls = [c for c in calls if c[0][1] == "q5_queue"]
-            self.assertEqual(len(q5_calls), 1)
-            self.assertEqual(q5_calls[0][0][2], [2020, "http://example.com/null", 0])
+            # Año 2020 <= 2020 -> A Q5 sum queue con [0]
+            sum_calls = [c for c in calls if c[0][1] == "q5_sum_queue"]
+            self.assertEqual(len(sum_calls), 1)
+            self.assertEqual(sum_calls[0][0][2], [0])
 
             # A repeated_queue no se debe emitir
             rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]
@@ -150,10 +152,10 @@ class TestTokenizerWorker(unittest.TestCase):
             self.worker.process_data(client_id=1, message=message)
 
             calls = mock_emit.call_args_list
-            # A Q5 con 0 palabras
-            q5_calls = [c for c in calls if c[0][1] == "q5_queue"]
-            self.assertEqual(len(q5_calls), 1)
-            self.assertEqual(q5_calls[0][0][2], [2022, "http://example.com/stopwords", 0])
+            # Año 2022 > 2020 -> A Q5 recent queue con [url, 0]
+            recent_calls = [c for c in calls if c[0][1] == "q5_recent_queue"]
+            self.assertEqual(len(recent_calls), 1)
+            self.assertEqual(recent_calls[0][0][2], ["http://example.com/stopwords", 0])
 
             # A repeated_queue no se emite ninguna
             rep_calls = [c for c in calls if c[0][1] == "repeated_queue"]

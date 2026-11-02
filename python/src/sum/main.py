@@ -2,6 +2,7 @@ import os
 import logging
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
+from common.utils import fnv1a_32
 
 
 REPLICA_ID = os.environ["REPLICA_ID"]
@@ -35,9 +36,9 @@ class SumWorker(BaseWorker):
 
     def _on_barrier(self,client_id):
         if client_id in self.totals:
-            total_len, total_abstracts = self.totals.pop(client_id)
-            replic = client_id % self.sum_join_amount
-            routing_key = f"{SUM_JOIN_PREFIX}_{replic}"
+            total_len, total_abstracts = self.totals.pop(client_id, [0, 0])
+            client_id_bytes = client_id.to_bytes((client_id.bit_length() + 7) // 8 or 1, "big")
+            routing_key = f"{SUM_JOIN_PREFIX}_{fnv1a_32(client_id_bytes) % self.sum_join_amount}"
 
             logging.info(f"Client {client_id}: partial sum len={total_len} abstracts={total_abstracts} | to {routing_key}")
 

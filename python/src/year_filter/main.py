@@ -3,6 +3,8 @@ import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 
+FILTER_YEAR = 2020
+
 class YearFilterWorker(BaseWorker):
     def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name, q2_output_queue_name):
         super().__init__(batch_size, host)
@@ -23,7 +25,7 @@ class YearFilterWorker(BaseWorker):
         # Base worker llama a este metodo sobre cada articulo dentro del batch
         # message es una lista con los parametros necesarios para esta etapa del articulo
         year, url, img, sections, name, date, language = message
-        if year <= 2020:
+        if year <= FILTER_YEAR:
             q1_projection = [language, url, date]
             self.emit(client_id, self.q1_output_queue_name, q1_projection)            
             q2_projection = [sections, name, url, img]

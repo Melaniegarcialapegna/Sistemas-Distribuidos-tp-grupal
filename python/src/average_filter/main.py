@@ -6,19 +6,22 @@ from common.eof_coordinator.queue_eof_coordinator import QueEofCoordinator
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
 from .input_stream.input_stream import InputStream
 from common import middleware
+from .recent_store.recent_store import RecentStore
 
 REPLICA_ID = os.environ["REPLICA_ID"]
 AVERAGE_KEY_PREFIX="average_exchange"
 
 class AverageFilterWorker(BaseWorker):
     def __init__(self, batch_size, host,exchange_control, recent_queue, average_exchange,
-                 results_queue, tokenizer_replicas, sum_join_amount):
+                 results_queue, tokenizer_replicas, sum_join_amount,store_path):
         super().__init__(batch_size,host)
         self.result_query_id = Query.Q5
         self.clients = {} #{client_id : average}
 
         self._create_output_queue(results_queue)
         self.results_queue = results_queue 
+
+        self.store_path = store_path
 
         # Create a InputStream for each input
         queue_coordinator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
@@ -31,6 +34,9 @@ class AverageFilterWorker(BaseWorker):
 
         self.input_handler = middleware.RabbitMQHandler(host)
         self.input_handler.subscribe_to_queue(recent_queue, self.input_handler.handle_message)
+
+        self.input_handler.subscribe_to_exchange(exchange_control,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(tokenizer_replicas)], self.recent.handle_message)
+
         self.input_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(sum_join_amount)], self.totals.handle_message)
 
     def process_data(self, client_id, payload):
@@ -40,8 +46,7 @@ class AverageFilterWorker(BaseWorker):
     def _on_recent_data(self, client_id, payload):
         url, lenght = payload
         if client_id not in self.clients:
-            #TODO : persistir data
-            pass
+            self.store.append(client_id, url, lenght)
         else:
             self._emit_if_above_average(client_id, url, lenght)
 

@@ -15,7 +15,8 @@ class AverageFilterWorker(BaseWorker):
                  results_queue, tokenizer_replicas, sum_join_amount):
         super().__init__(batch_size,host)
         self.result_query_id = Query.Q5
-        self.clients = {} #{client_id : ver}
+        self.clients = {} #{client_id : average}
+
 
         self._create_output_queue(results_queue)
         self.results_queue = results_queue 
@@ -28,6 +29,25 @@ class AverageFilterWorker(BaseWorker):
         exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_barrier)
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
+
+    def process_data(self, client_id, payload):
+        #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 
+        raise NotImplementedError("AverageFilter process by the InputStream")
+
+    def _on_recent_data(self, client_id, payload):
+        url, lenght = payload
+        if client_id not in self.clients:
+            #TODO : persistir data
+            pass
+        else:
+            self._emit_if_above_average(client_id, url, lenght)
+
+    #Helpers
+    def _emit_if_above_average(self, client_id, url, lenght):
+        average = self.clients[client_id]
+        if lenght > average:
+            self.emit(client_id, self.results_queue, [self.result_query_id,url,lenght])
+
 
 
 def main():

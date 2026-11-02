@@ -1,4 +1,5 @@
 from asyncio import IncompleteReadError
+import os
 
 from . import external_serializer, tlv_protocol
 
@@ -131,11 +132,29 @@ def receive_q1_result(socket, size):
 
 
 def receive_q2_result(socket, size):
-    name, url, _ = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    name, url, img_bytes = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
     row = f"name: {name} - url: {url}"
+
+    img_status = "No image found"
+
+    # Por ahora se guardan para comprobar que funciona. 
+    if img_bytes:
+        safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).strip()
+        filename = f"{safe_name}.jpg"
+        
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = os.path.join(output_dir, filename)
+
+        with open(filepath, "wb") as f:
+            f.write(img_bytes)
+            
+        img_status = f"Saved in '{filepath}'"
+
     row = (
         f" 📖 Name     : {name}\n"
         f" 🔗 URL      : {url}\n"
+        f" 📸 {img_status}"
     )
     return row
 

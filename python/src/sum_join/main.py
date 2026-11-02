@@ -15,6 +15,7 @@ class SumJoinWorker(BaseWorker):
 
         self.average_exchange = average_exchange
         self.average_routing_keys = [f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(average_filter_amount)]
+        self._create_output_exchange(average_exchange, self.average_routing_keys)
 
         self.eof_coordinator = ExchangeEofCoordinator( 
             replica_id=REPLICA_ID,

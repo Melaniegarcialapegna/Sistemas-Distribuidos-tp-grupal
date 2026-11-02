@@ -64,11 +64,8 @@ def _recv_article_record_batch(socket):
         batch_data.append(record)
     return batch_data
 
-
-
 def _send_ack(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.ACK))
-
 
 def _send_end_of_records(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECORDS))
@@ -99,7 +96,9 @@ def _recv_query_result_batch(socket):
 
     for _ in range(n_rows):
         size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
-        rows.append(tlv_protocol.deserialize_tlv(_recv_sized(socket, size)))
+        result_handler = RESULT_MSG_HANDLERS[query_id]
+        result = result_handler(socket, size)
+        rows.append(result)
 
     return (query_id, rows)
 
@@ -122,6 +121,33 @@ def _send_query_result_batch(socket, query_id, rows):
 def _send_query_done(socket, query_id):
     socket.sendall(external_serializer.serialize_uint32(MsgType.QUERY_DONE) + external_serializer.serialize_uint32(query_id))
 
+def receive_q1_result(socket, size):
+    url, date = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    row = (
+        f" 🔗 URL      : {url}\n"
+        f" 📅 Date     : {date}\n"
+    )
+    return row
+
+
+def receive_q2_result(socket, size):
+    name, url, _ = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    row = f"name: {name} - url: {url}"
+    row = (
+        f" 📖 Name     : {name}\n"
+        f" 🔗 URL      : {url}\n"
+    )
+    return row
+
+def receive_q3_result():
+    pass
+
+def receive_q4_result():
+    pass
+
+def receive_q5_result():
+    pass
+
 
 RECV_MSG_HANDLERS = {
     MsgType.ACK: _recv_empty,
@@ -139,3 +165,10 @@ SEND_MSG_HANDLERS = {
     MsgType.QUERY_DONE: _send_query_done,
 }
 
+RESULT_MSG_HANDLERS = {
+    Query.Q1: receive_q1_result,
+    Query.Q2: receive_q2_result,
+    Query.Q3: receive_q3_result, 
+    Query.Q4: receive_q4_result,
+    Query.Q5: receive_q5_result
+}

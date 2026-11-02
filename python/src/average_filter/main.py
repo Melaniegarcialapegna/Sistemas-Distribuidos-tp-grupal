@@ -5,18 +5,17 @@ from common.message_protocol import Query
 from common.eof_coordinator.queue_eof_coordinator import QueEofCoordinator
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
 from .input_stream.input_stream import InputStream
+from common import middleware
 
 REPLICA_ID = os.environ["REPLICA_ID"]
 AVERAGE_KEY_PREFIX="average_exchange"
 
 class AverageFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host,recent_queue,
-                 control_exchange, control_routing_key, average_exchange,
+    def __init__(self, batch_size, host,recent_queue, average_exchange,
                  results_queue, tokenizer_replicas, sum_join_amount):
         super().__init__(batch_size,host)
         self.result_query_id = Query.Q5
         self.clients = {} #{client_id : average}
-
 
         self._create_output_queue(results_queue)
         self.results_queue = results_queue 
@@ -30,10 +29,12 @@ class AverageFilterWorker(BaseWorker):
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
 
+        self.recent_handler = middleware.RabbitMQHandler(host)
+        self.recent_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
 
-        self.control_exchange_name = control_exchange
-        self.control_routing_key = control_routing_key
-        
+        self.totals_handler = middleware.RabbitMQHandler(host)
+        self.totals_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(sum_join_amount)], self.totals.handle_message)
+
 
     def process_data(self, client_id, payload):
         #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 

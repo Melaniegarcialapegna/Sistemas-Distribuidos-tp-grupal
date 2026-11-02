@@ -1,0 +1,9 @@
+FROM python:3-alpine
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir kagglehub pandas pyarrow
+
+COPY download_files.py .
+
+CMD ["python3", "download_files.py"]

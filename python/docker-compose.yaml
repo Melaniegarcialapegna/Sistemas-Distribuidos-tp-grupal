@@ -11,7 +11,7 @@ services:
     -  average_filter_0
     -  gateway
     environment:
-    - INPUT_FILE=/datasets/test2.parquet
+    - INPUT_FILE=/datasets
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678

@@ -16,6 +16,10 @@ logs:
 	docker compose -f docker-compose.yaml logs
 .PHONY: logs
 
+download:
+	docker compose -f docker-compose.yaml run --rm downloader
+.PHONY: download
+
 test:
 	mkdir -p output
 	rm ./output/* -f

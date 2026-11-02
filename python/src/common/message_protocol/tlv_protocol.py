@@ -1,9 +1,12 @@
+from common.word_item import WordItem
+
 TYPE_REPRESENTATIONS = {
     "INT": 1,
     "STRING": 2,
     "BYTES": 3,
     "FLOAT": 4,
     "LIST": 5,
+    "WORD_ITEM": 6
 }
 
 
@@ -70,12 +73,28 @@ def serialize_list(list):
     type_byte = TYPE_REPRESENTATIONS['LIST'].to_bytes(1, "big")
     return type_byte + length.to_bytes(LENGTH_BYTES, "big") + serialized_data
 
+def serialize_word_item(word_item):
+    """
+    Serialize a WordItem into a TLV format.
+
+    :param word_item: A WordItem object to be serialized.
+    :return: A bytes object representing the serialized TLV data for the WordItem.
+    """
+    serialized_word = serialize_string(word_item.word)
+    # solo necesitamos el total asi que como mini optimizacion serializamos solo el total_count y no los counts individuales
+    serialized_count = serialize_int(word_item.total_count())
+    serialized_data = serialized_word + serialized_count
+    length = len(serialized_data)
+    type_byte = TYPE_REPRESENTATIONS['WORD_ITEM'].to_bytes(1, "big")
+    return type_byte + length.to_bytes(LENGTH_BYTES, "big") + serialized_data
+
 SERIALIZATION_METHODS = {
     int: serialize_int,
     str: serialize_string,
     bytes: serialize_bytes,
     list: serialize_list,
     float: serialize_float,
+    WordItem: serialize_word_item,
 }
 
 def serialize_tlv(params):
@@ -121,12 +140,40 @@ def deserialize_float(data):
     # Idem que para serialize_float, no veo como deserializar un float en TLV, porque no hay un formato estandar para eso.
     raise NotImplementedError("Float deserialization is not implemented yet.")
 
+def deserialize_word_item(data):
+    """
+    Deserialize a TLV formatted WordItem.
+
+    :param data: A bytes object representing the serialized TLV data for the WordItem, excluding the type byte.
+    :return: The deserialized WordItem object.
+    """
+    index = 0
+    type_byte = data[index]
+    if type_byte != TYPE_REPRESENTATIONS['STRING']:
+        raise ValueError(f"Expected STRING type for word, got {type_byte}")
+    index += 1
+    length = int.from_bytes(data[index:index + LENGTH_BYTES], "big")
+    index += LENGTH_BYTES
+    word = deserialize_string(data[index:index + length])
+    index += length
+
+    type_byte = data[index]
+    if type_byte != TYPE_REPRESENTATIONS['INT']:
+        raise ValueError(f"Expected INT type for count, got {type_byte}")
+    index += 1
+    length = int.from_bytes(data[index:index + LENGTH_BYTES], "big")
+    index += LENGTH_BYTES
+    count = deserialize_int(data[index:index + length])
+
+    return WordItem(word, count, 0)  # se lo seteamos al eng count arbitrariamente, solo necesitamos el total_count
+
 DESERIALIZATION_METHODS = {
     TYPE_REPRESENTATIONS['INT']: deserialize_int,
     TYPE_REPRESENTATIONS['STRING']: deserialize_string,
     TYPE_REPRESENTATIONS['BYTES']: lambda x: x,  # bytes ya vienen encodeados
     TYPE_REPRESENTATIONS['FLOAT']: deserialize_float,
     TYPE_REPRESENTATIONS['LIST']: lambda x: deserialize_tlv(x),
+    TYPE_REPRESENTATIONS['WORD_ITEM']: deserialize_word_item
 }
 def deserialize_tlv(data):
     """

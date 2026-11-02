@@ -16,12 +16,12 @@ class AverageFilterWorker(BaseWorker):
                  results_queue, tokenizer_replicas, sum_join_amount,store_path):
         super().__init__(batch_size,host)
         self.result_query_id = Query.Q5
-        self.clients = {} #{client_id : average}
+        self.clients_average = {} #{client_id : average}
+        self.barriers = {} 
 
         self._create_output_queue(results_queue)
         self.results_queue = results_queue 
 
-        self.store_path = store_path
         self.store = RecentStore(store_path)
 
         self.control_exchange_name = exchange_control
@@ -39,43 +39,59 @@ class AverageFilterWorker(BaseWorker):
         self.input_handler = middleware.RabbitMQHandler(host)
         self.input_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
 
-        self.input_handler.subscribe_to_exchange(exchange_control,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(tokenizer_replicas)], self.recent.handle_message)
+        self.input_handler.subscribe_to_exchange(exchange_control,[self.control_routing_key], self.recent.handle_message)
 
-        self.input_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(sum_join_amount)], self.totals.handle_message)
+        self.input_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{REPLICA_ID}"], self.totals.handle_message)
 
     def process_data(self, client_id, payload):
         #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 
         raise NotImplementedError("AverageFilter process by the InputStream")
 
+    def stop(self):
+        self.store.close_all()
+        super().stop()
+
     def _on_recent_data(self, client_id, payload):
         url, lenght = payload
-        if client_id not in self.clients:
+        if client_id not in self.clients_average:
             self.store.append(client_id, url, lenght)
         else:
             self._emit_if_above_average(client_id, url, lenght)
 
     def _on_recent_barrier(self, client_id):
-        if client_id in self.clients:
-            self._flush_all(client_id)
-            del self.clients[client_id]
+        self._barrier_reached(client_id)
 
     def _on_total_data(self, client_id, payload):
         total_len, total_abstracts = payload
         average = total_len / total_abstracts if total_abstracts > 0 else 0
-        self.clients[client_id] = average
+        self._set_average(client_id, average)
+    
+    def _on_total_barrier(self, client_id):
+        if client_id not in self.clients_average:
+            self._set_average(client_id, 0)
+        self._barrier_reached(client_id)
+        
+    #Helpers
+
+    def _set_average(self, client_id, average):
+        self.clients_average[client_id] = average
         logging.info(f"Client {client_id}: average={average}")
         for url, lenght in self.store.read_all(client_id):
             self._emit_if_above_average(client_id, url, lenght)
-    
-    def _on_total_barrier(self, client_id):
-        self._on_recent_barrier(client_id)
-        
-    #Helpers
+        self.store.delete(client_id)
+
     def _emit_if_above_average(self, client_id, url, lenght):
-        average = self.clients[client_id]
+        average = self.clients_average[client_id]
         if lenght > average:
             self.emit(client_id, self.results_queue, [self.result_query_id,url,lenght])
 
+    def _barrier_reached(self, client_id):
+        logging.info(f"Client {client_id}: barrier reached")
+        self.barriers[client_id] = self.barriers.get(client_id, 0) + 1
+        if self.barriers[client_id] == 2:
+            del self.barriers[client_id]
+            del self.clients_average[client_id]
+            self._flush_all(client_id)
 
 
 def main():
@@ -90,9 +106,9 @@ def main():
     tokenizer_replicas = int(os.environ.get("TOKENIZER_REPLICAS", "1"))
     sum_join_amount = int(os.environ["SUM_JOIN_AMOUNT"])
     store_path = os.environ.get("STORE_PATH")
-
-    worker = AverageFilterWorker(batch_size, host,exchange_control, recent_queue, average_exchange,
-                 results_queue, tokenizer_replicas, sum_join_amount,store_path)
+ 
+    worker = AverageFilterWorker(batch_size, host, exchange_control, recent_queue, average_exchange,
+                                 results_queue, tokenizer_replicas, sum_join_amount, store_path)
 
     worker.start()
     return 0

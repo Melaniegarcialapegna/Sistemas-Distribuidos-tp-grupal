@@ -116,8 +116,6 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-      sum_join_0:
-        condition: service_started
     environment:
     - RABBITMQ_HOST=rabbitmq
     - BATCH_SIZE=10

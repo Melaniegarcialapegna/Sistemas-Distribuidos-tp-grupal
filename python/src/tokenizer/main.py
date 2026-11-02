@@ -8,11 +8,11 @@ from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 WORD_ONLY_REGEX = re.compile(r'\b[^\W\d_]+\b')
 
 class TokenizerWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q3_4_output_queue, q5_output_queue):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_output_queue):
         super().__init__(batch_size, host)
-        self._create_output_queue(q3_4_output_queue)
+        self._create_output_queue(repeated_filter_output_queue)
         self._create_output_queue(q5_output_queue)
-        self.q3_4_output_queue = q3_4_output_queue
+        self.repeated_filter_output_queue = repeated_filter_output_queue
         self.q5_output_queue = q5_output_queue
         self.eof_coordinator = QueueEofCoordinator(
             replica_id=os.environ.get("REPLICA_ID", "default_replica"),
@@ -31,9 +31,8 @@ class TokenizerWorker(BaseWorker):
         year, url, abstract, in_language = message
         filtered_abstract = self._extract_non_stopwords_from_abstract(abstract)
         self.emit(client_id, self.q5_output_queue, [year, url, len(filtered_abstract)])
-        single_words = set(filtered_abstract)
-        for word in single_words:
-            self.emit(client_id, self.q3_4_output_queue, [word, in_language])
+        if filtered_abstract:
+            self.emit(client_id, self.repeated_filter_output_queue, [filtered_abstract, in_language])
 
     def _extract_non_stopwords_from_abstract(self, abstract):
         if not isinstance(abstract, str):
@@ -46,13 +45,13 @@ def main():
     logging.basicConfig(level=logging.INFO)
     host = os.environ["RABBITMQ_HOST"]
     input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    q3_4_output_queue = os.environ["Q3_4_OUTPUT_QUEUE_NAME"]
+    repeated_filter_output_queue = os.environ.get("REPEATED_FILTER_OUTPUT_QUEUE_NAME") or os.environ.get("Q3_4_OUTPUT_QUEUE_NAME")
     q5_output_queue = os.environ["Q5_OUTPUT_QUEUE_NAME"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
     control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
     control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
-    tokenizer_worker = TokenizerWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q3_4_output_queue, q5_output_queue)
+    tokenizer_worker = TokenizerWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, repeated_filter_output_queue, q5_output_queue)
     tokenizer_worker.start()
     return 0
 

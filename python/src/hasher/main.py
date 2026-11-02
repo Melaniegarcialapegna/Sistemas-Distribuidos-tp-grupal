@@ -29,10 +29,11 @@ class HasherWorker(BaseWorker):
     def process_data(self, client_id, message):
         # Base worker llama a este metodo sobre cada articulo dentro del batch
         # message es una lista con los parametros necesarios para esta etapa del articulo
-        word = message[0]
-        index = self.fnv1a_32(word.encode("utf-8")) % self.next_stage_replicas
-        routing_key = f"{self.output_routing_key_prefix}_{index}"
-        self.emit(client_id, self.output_exchange_name, message, routing_keys=[routing_key])
+        words, in_language = message
+        for word in words:
+            index = self.fnv1a_32(word.encode("utf-8")) % self.next_stage_replicas
+            routing_key = f"{self.output_routing_key_prefix}_{index}"
+            self.emit(client_id, self.output_exchange_name, [word, in_language], routing_keys=[routing_key])
 
     @staticmethod
     def fnv1a_32(data: bytes) -> int:           

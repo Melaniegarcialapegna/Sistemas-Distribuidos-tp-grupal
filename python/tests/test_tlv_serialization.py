@@ -1,4 +1,9 @@
+import os
+import sys
 import unittest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from src.common.message_protocol.tlv_protocol import (
     serialize_tlv,
@@ -6,6 +11,7 @@ from src.common.message_protocol.tlv_protocol import (
     TYPE_REPRESENTATIONS,
     LENGTH_BYTES,
 )
+from common.word_item import WordItem
 from src.common.message_protocol.internal import (
     TLVSerializer,
     TLVDeserializer,
@@ -87,6 +93,29 @@ class TestTLVSerialization(unittest.TestCase):
         serialized_data = serialize_tlv(original_data)
         deserialized_data = deserialize_tlv(serialized_data)
         self.assertEqual(original_data, deserialized_data)
+
+    def test_serialize_deserialize_word_item(self):
+        original_item = WordItem("apple", 3, 2)
+        serialized_data = serialize_tlv([original_item])
+        deserialized_data = deserialize_tlv(serialized_data)
+        self.assertEqual(len(deserialized_data), 1)
+        self.assertIsInstance(deserialized_data[0], WordItem)
+        self.assertEqual(deserialized_data[0].word, "apple")
+        self.assertEqual(deserialized_data[0].total_count(), 5)
+
+    def test_serialize_deserialize_list_of_word_items(self):
+        original_items = [
+            WordItem("apple", 5, 0),
+            WordItem("banana", 2, 3),
+            WordItem("cherry", 1, 1),
+        ]
+        serialized_data = serialize_tlv([original_items])
+        deserialized_data = deserialize_tlv(serialized_data)
+        self.assertEqual(len(deserialized_data), 1)
+        items = deserialized_data[0]
+        self.assertEqual(len(items), 3)
+        self.assertEqual([w.word for w in items], ["apple", "banana", "cherry"])
+        self.assertEqual([w.total_count() for w in items], [5, 5, 2])
 
 
 class TestInternalMessages(unittest.TestCase):

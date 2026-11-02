@@ -9,8 +9,10 @@ from common.utils import fnv1a_32
 class WordCounterWorker(BaseWorker):
     def __init__(self, batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_exchange_name, top_exchange_rk_prefix, top_size=20):
         super().__init__(batch_size, host)
+        self.next_stage_replicas = int(os.environ.get("NEXT_STAGE_REPLICAS", "1"))
+        top_routing_keys = [f"{top_exchange_rk_prefix}_{i}" for i in range(self.next_stage_replicas)]
         self._create_output_queue(results_queue_name)
-        self._create_output_exchange(top_exchange_name)
+        self._create_output_exchange(top_exchange_name, top_routing_keys)
         self.results_queue_name = results_queue_name
         self.top_exchange_name = top_exchange_name
         self.top_exchange_rk_prefix = top_exchange_rk_prefix
@@ -18,8 +20,7 @@ class WordCounterWorker(BaseWorker):
         self.eof_coordinator = ExchangeEofCoordinator(
             replica_id=replica_id,
             previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
-            on_barrier=self._flush_all,
-            publish_control=self._publish_control_message
+            on_barrier=self._on_barrier
         )
         self.input_exchange_name = input_exchange_name
         self.input_exchange_prefix = input_exchange_prefix
@@ -42,10 +43,11 @@ class WordCounterWorker(BaseWorker):
     def _on_barrier(self, client_id):
         logging.info(f"Client {client_id}: barrier reached, flushing data")
         client_counts = self.data.pop(client_id, {}) # Obtenemos y eliminamos los datos del cliente, nos devuelve un diccionario {word: [WordItem, sent]}
-        client_counts = client_counts.values()[0] if client_counts else [] # Obtenemos solo los WordItem, ignorando el flag de enviado
-        sorted_counts = sorted(client_counts, key=lambda count: count.total_count(), reverse=True)[:self.top_size] # Ordenamos y obtenemos los top k
+        word_items = [entry[0] for entry in client_counts.values()] # Obtenemos solo los WordItem, ignorando el flag de enviado
+        sorted_counts = sorted(word_items, key=lambda count: count.total_count(), reverse=True)[:self.top_size] # Ordenamos y obtenemos los top k
 
-        routing_key = f"{self.top_exchange_rk_prefix}_{fnv1a_32(client_id.to_bytes()) % self.top_size}" # Calculamos el routing key para enviar al top_queue
+        client_id_bytes = client_id.to_bytes((client_id.bit_length() + 7) // 8 or 1, "big")
+        routing_key = f"{self.top_exchange_rk_prefix}_{fnv1a_32(client_id_bytes) % self.next_stage_replicas}" # Calculamos el routing key para enviar al top_queue
 
         self.emit(client_id, self.top_exchange_name, [sorted_counts], routing_keys=[routing_key]) # Enviamos los top k al top_queue
 

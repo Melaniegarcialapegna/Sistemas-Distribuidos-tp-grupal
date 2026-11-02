@@ -12,8 +12,7 @@ class JoinTop20Worker(BaseWorker):
         self.eof_coordinator = ExchangeEofCoordinator(
             replica_id=replica_id,
             previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
-            on_barrier=self._flush_all,
-            publish_control=self._publish_control_message
+            on_barrier=self._on_barrier
         )
         self.input_exchange_name = input_exchange_name
         self.input_exchange_prefix = input_exchange_prefix
@@ -26,18 +25,26 @@ class JoinTop20Worker(BaseWorker):
     def process_data(self, client_id, message):
         # Base worker llama a este metodo sobre cada articulo dentro del batch
         # message es una lista con los parametros necesarios para esta etapa del articulo
-        partial_top_20 = message
-        if self.data.get(client_id) is None:
-            self.data[client_id] = partial_top_20
-            return
-        i = 0
-        j = 0
-        # Recorro el top actual y si en algun momento el nuevo top tiene un elemento mayor, lo reemplazo y avanzo en el nuevo top
-        while i < len(self.data[client_id]) and j < len(partial_top_20):
-            if self.data[client_id][i] < partial_top_20[j]:
-                self.data[client_id][i] = partial_top_20[j]
+        partial_top = message[0]  # message es una lista con un solo elemento: la lista de WordItem
+        new_top = []
+        i, j = 0, 0
+        # Metemos los elementos entre ambos arreglos en orden descendente
+        while i < len(self.data.get(client_id, [])) and j < len(partial_top) and len(new_top) < self.top_size:
+            if self.data[client_id][i].total_count() >= partial_top[j].total_count():
+                new_top.append(self.data[client_id][i])
+                i += 1
+            else:
+                new_top.append(partial_top[j])
                 j += 1
+        # Si no se llego al top size porque en el mensaje habia menos elementos, agregamos los restantes del arreglo viejo
+        while i < len(self.data.get(client_id, [])) and len(new_top) < self.top_size:
+            new_top.append(self.data[client_id][i])
             i += 1
+        # Si no se llego al top size porque en el arreglo previo habia menos elementos, agregamos los restantes del mensaje
+        while j < len(partial_top) and len(new_top) < self.top_size:
+            new_top.append(partial_top[j])
+            j += 1
+        self.data[client_id] = new_top
 
     def _on_barrier(self, client_id):
         logging.info(f"Client {client_id}: barrier reached, flushing data")

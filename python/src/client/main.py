@@ -14,7 +14,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
-EXPECTED_QUERIES = {message_protocol.external.Query.Q1} # add to config
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2} # add to config
 
 class Client:
 
@@ -79,7 +79,7 @@ class Client:
                     query_id, rows = payload
                     rows_per_query[query_id] = rows_per_query.get(query_id, 0) + len(rows)
                     for row in rows:
-                        print(f"Q{query_id}: {row}")
+                        print(f"Q{query_id}\n{row}")
                 elif msg_type == external.MsgType.QUERY_DONE:
                     logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas") 
                     queries_done.add(payload)

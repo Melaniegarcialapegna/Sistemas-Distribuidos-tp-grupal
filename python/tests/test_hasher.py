@@ -32,6 +32,7 @@ except ImportError:
     sys.modules["pika.exceptions"] = mock_pika_exceptions
 
 from hasher.main import HasherWorker
+from common.utils import fnv1a_32
 
 
 class TestHasherWorker(unittest.TestCase):
@@ -67,7 +68,7 @@ class TestHasherWorker(unittest.TestCase):
             self.assertEqual(mock_emit.call_count, 2)
 
             for word in ["hello", "world"]:
-                expected_index = HasherWorker.fnv1a_32(word.encode("utf-8")) % 3
+                expected_index = fnv1a_32(word.encode("utf-8")) % 3
                 expected_routing_key = f"words_{expected_index}"
                 mock_emit.assert_any_call(
                     1,
@@ -77,8 +78,8 @@ class TestHasherWorker(unittest.TestCase):
                 )
 
     def test_fnv1a_32_deterministic(self):
-        self.assertEqual(HasherWorker.fnv1a_32(b"test"), HasherWorker.fnv1a_32(b"test"))
-        self.assertIsInstance(HasherWorker.fnv1a_32(b"test"), int)
+        self.assertEqual(fnv1a_32(b"test"), fnv1a_32(b"test"))
+        self.assertIsInstance(fnv1a_32(b"test"), int)
 
 
 if __name__ == "__main__":

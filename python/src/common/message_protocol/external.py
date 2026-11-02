@@ -99,8 +99,10 @@ def _recv_query_result_batch(socket):
         size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
         result_handler = RESULT_MSG_HANDLERS[query_id]
         result = result_handler(socket, size)
-        rows.append(result)
-
+        if query_id == Query.Q4 and isinstance(result, list):
+            rows.extend(result)
+        else:
+            rows.append(result)
     return (query_id, rows)
 
 def _recv_query_done(socket):
@@ -122,49 +124,17 @@ def _send_query_result_batch(socket, query_id, rows):
 def _send_query_done(socket, query_id):
     socket.sendall(external_serializer.serialize_uint32(MsgType.QUERY_DONE) + external_serializer.serialize_uint32(query_id))
 
-def receive_q1_result(socket, size):
-    url, date = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
-    row = (
-        f" 🔗 URL      : {url}\n"
-        f" 📅 Date     : {date}\n"
-    )
+def receive_row_result(socket, size):
+    row = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
     return row
+    
 
+def receive_top_result(socket, size):
+    payload = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    top_items = payload[0] if payload and isinstance(payload[0], list) else payload
+    return [[item.word, item.total_count()] for item in top_items]
 
-def receive_q2_result(socket, size):
-    name, url, img_bytes = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
-    row = f"name: {name} - url: {url}"
-
-    img_status = "No image found"
-
-    # Por ahora se guardan para comprobar que funciona. 
-    if img_bytes:
-        safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).strip()
-        filename = f"{safe_name}.jpg"
-        
-        output_dir = "output"
-        os.makedirs(output_dir, exist_ok=True)
-        filepath = os.path.join(output_dir, filename)
-
-        with open(filepath, "wb") as f:
-            f.write(img_bytes)
-            
-        img_status = f"Saved in '{filepath}'"
-
-    row = (
-        f" 📖 Name     : {name}\n"
-        f" 🔗 URL      : {url}\n"
-        f" 📸 {img_status}\n"
-    )
-    return row
-
-def receive_q3_result():
-    pass
-
-def receive_q4_result():
-    pass
-
-def receive_q5_result():
+def receive_q5_result(socket, size):
     pass
 
 
@@ -185,9 +155,9 @@ SEND_MSG_HANDLERS = {
 }
 
 RESULT_MSG_HANDLERS = {
-    Query.Q1: receive_q1_result,
-    Query.Q2: receive_q2_result,
-    Query.Q3: receive_q3_result, 
-    Query.Q4: receive_q4_result,
+    Query.Q1: receive_row_result,
+    Query.Q2: receive_row_result,
+    Query.Q3: receive_row_result, 
+    Query.Q4: receive_top_result,
     Query.Q5: receive_q5_result
 }

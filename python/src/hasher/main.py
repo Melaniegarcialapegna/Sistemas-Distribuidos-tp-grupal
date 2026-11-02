@@ -2,8 +2,8 @@ import logging
 import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
+from common.utils import fnv1a_32
 
-FNV32_OFFSET, FNV32_PRIME = 0x811C9DC5, 0x01000193
 
 class HasherWorker(BaseWorker):
     def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_exchange_name, output_routing_key_prefix):
@@ -31,17 +31,9 @@ class HasherWorker(BaseWorker):
         # message es una lista con los parametros necesarios para esta etapa del articulo
         words, in_language = message
         for word in words:
-            index = self.fnv1a_32(word.encode("utf-8")) % self.next_stage_replicas
+            index = fnv1a_32(word.encode("utf-8")) % self.next_stage_replicas
             routing_key = f"{self.output_routing_key_prefix}_{index}"
             self.emit(client_id, self.output_exchange_name, [word, in_language], routing_keys=[routing_key])
-
-    @staticmethod
-    def fnv1a_32(data: bytes) -> int:           
-        h = FNV32_OFFSET
-        for byte in data:
-            h ^= byte
-            h = (h * FNV32_PRIME) & 0xFFFFFFFF
-        return h
 
 def main():
     logging.basicConfig(level=logging.INFO)

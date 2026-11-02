@@ -2,6 +2,7 @@ import logging
 import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
+from common.message_protocol.external import Query
 from common.word_item import WordItem
 from common.utils import fnv1a_32
 
@@ -27,6 +28,7 @@ class WordCounterWorker(BaseWorker):
         self.replica_id = replica_id
         routing_keys = [f"{input_exchange_prefix}_{replica_id}"]
         self._create_exchange_input_handler(input_exchange_name, routing_keys)
+        self.result_query_id = Query.Q3
         self.data = {}  # Diccionario para almacenar los datos por cliente_id {client_id: {word: [word_count, sent]}}
 
     def process_data(self, client_id, message):
@@ -38,7 +40,7 @@ class WordCounterWorker(BaseWorker):
         self.data[client_id][word][0] = self.data[client_id][word][0] + word_item
         if (not self.data[client_id][word][-1]) and (self.data[client_id][word][0].intersection_reached()):
             self.data[client_id][word][-1] = True
-            self.emit(client_id, self.results_queue_name, [word])
+            self.emit(client_id, self.results_queue_name, [self.result_query_id, word])
 
     def _on_barrier(self, client_id):
         logging.info(f"Client {client_id}: barrier reached, flushing data")

@@ -1,3 +1,4 @@
+import glob
 import os
 import logging
 import socket
@@ -14,7 +15,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
-EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2} # add to config
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2, message_protocol.external.Query.Q3} # add to config
 
 class Client:
 
@@ -49,19 +50,30 @@ class Client:
             self.server_socket.shutdown(socket.SHUT_RDWR)
 
     def send_article_info(self, input_file):
-        logging.info("Sending article info")
-        parquet_file = pq.ParquetFile(input_file)
-        for batch in parquet_file.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
-                batch_data = []
-                for r in batch.to_pylist():
-                    r = self._flatten(r)
-                    batch_data.append(r)
 
-                message_protocol.external.send_msg(
-                    self.server_socket,
-                    message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
-                    batch_data
-                )
+        if os.path.isdir(input_file):
+            parquet_files = sorted(glob.glob(os.path.join(input_file, "*.parquet")))
+            logging.info(f"Se detectó una carpeta. Procesando {len(parquet_files)} archivos .parquet...")
+        elif os.path.isfile(input_file):
+            parquet_files = [input_file]
+            logging.info("Se detectó un único archivo .parquet.")
+        else:
+            raise FileNotFoundError(f"La ruta no es válida: {input_file}")
+
+        for parquet_file in parquet_files:
+            logging.info("Sending article info")
+            parquet = pq.ParquetFile(parquet_file)
+            for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
+                    batch_data = []
+                    for r in batch.to_pylist():
+                        r = self._flatten(r)
+                        batch_data.append(r)
+
+                    message_protocol.external.send_msg(
+                        self.server_socket,
+                        message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
+                        batch_data
+                    )
 
         message_protocol.external.send_msg(
             self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS

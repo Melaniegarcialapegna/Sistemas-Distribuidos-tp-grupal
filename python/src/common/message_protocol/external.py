@@ -158,13 +158,18 @@ def receive_q2_result(socket, size):
     )
     return row
 
-def receive_q3_result():
+def receive_q3_result(socket, size):
+    word = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    row = (
+        f" 📖 Word     : {word}\n"
+    )
+    return row
+    
+
+def receive_q4_result(socket, size):
     pass
 
-def receive_q4_result():
-    pass
-
-def receive_q5_result():
+def receive_q5_result(socket, size):
     pass
 
 

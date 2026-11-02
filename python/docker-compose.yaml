@@ -1,16 +1,4 @@
 services:
-  downloader:
-    build:
-      context: .
-      dockerfile: Dockerfile.download
-    container_name: downloader
-    environment:
-      KAGGLE_USERNAME: martinariccardi
-      KAGGLE_KEY: KGAT_c05bedad0568e90eb5ffa61b5ec7b305
-      PYTHONUNBUFFERED: 1
-    volumes:
-      - ./datasets:/datasets
-
   client_0:
     build:
       context: ./src/
@@ -68,7 +56,7 @@ services:
     - gateway
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=year_filter_queue
     - Q1_OUTPUT_QUEUE_NAME=article_language_queue
     - Q2_OUTPUT_QUEUE_NAME=article_sections_queue
@@ -86,7 +74,7 @@ services:
     - year_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=article_language_queue
     - Q1_OUTPUT_QUEUE_NAME=results_queue
     - CONTROL_EXCHANGE_NAME=language_filter_control
@@ -102,7 +90,7 @@ services:
     - year_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=article_sections_queue
     - Q2_OUTPUT_QUEUE_NAME=image_queue
     - CONTROL_EXCHANGE_NAME=biography_filter_control
@@ -119,7 +107,7 @@ services:
     - biography_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=image_queue
     - Q2_OUTPUT_QUEUE_NAME=results_queue
     - CONTROL_EXCHANGE_NAME=image_downloader_control
@@ -135,7 +123,7 @@ services:
     - biography_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=tokenizer_queue
     - Q3_4_OUTPUT_QUEUE_NAME=words_without_stopwords_queue
     - Q5_OUTPUT_QUEUE_NAME=abstracts_length_queue
@@ -152,7 +140,7 @@ services:
     - biography_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=words_without_stopwords_queue
     - Q3_4_OUTPUT_QUEUE_NAME=unique_words_queue
     - CONTROL_EXCHANGE_NAME=unique_words_filter_control
@@ -169,7 +157,7 @@ services:
     - biography_filter_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_QUEUE_NAME=unique_words_queue
     - OUTPUT_EXCHANGE_NAME=affinity_words_exchange
     - OUTPUT_ROUTING_KEY_PREFIX=affinity_words
@@ -187,12 +175,12 @@ services:
     - hasher_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_EXCHANGE_NAME=affinity_words_exchange
-    - INPUT_ROUTING_KEY_PREFIX=affinity_words
+    - INPUT_EXCHANGE_PREFIX=affinity_words
     - RESULTS_QUEUE_NAME=results_queue
     - TOP_EXCHANGE_NAME=client_affinity_exchange
-    - TOP_ROUTING_KEY_PREFIX=client_affinity
+    - TOP_EXCHANGE_RK_PREFIX=client_affinity
     - CONTROL_EXCHANGE_NAME=word_counter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
@@ -207,9 +195,9 @@ services:
     - hasher_0
     environment:
     - BATCH_SIZE=100
-    - ID=0
+    - REPLICA_ID=0
     - INPUT_EXCHANGE_NAME=client_affinity_exchange
-    - INPUT_ROUTING_KEY_PREFIX=client_affinity
+    - INPUT_EXCHANGE_PREFIX=client_affinity
     - RESULTS_QUEUE_NAME=results_queue
     - CONTROL_EXCHANGE_NAME=join_top_20_control
     - CONTROL_ROUTING_KEY=

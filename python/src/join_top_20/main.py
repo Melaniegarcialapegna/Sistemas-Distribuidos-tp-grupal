@@ -2,6 +2,7 @@ import logging
 import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
+from common.message_protocol.external import Query
 from common.word_item import WordItem
 
 class JoinTop20Worker(BaseWorker):
@@ -20,6 +21,7 @@ class JoinTop20Worker(BaseWorker):
         routing_keys = [f"{input_exchange_prefix}_{replica_id}"]
         self._create_exchange_input_handler(input_exchange_name, routing_keys)
         self.top_size = top_size
+        self.result_query_id = Query.Q4
         self.data = {}  # Diccionario para almacenar los datos por cliente_id {client_id: [current_top_20]}
 
     def process_data(self, client_id, message):
@@ -49,7 +51,7 @@ class JoinTop20Worker(BaseWorker):
     def _on_barrier(self, client_id):
         logging.info(f"Client {client_id}: barrier reached, flushing data")
         top_20 = self.data.pop(client_id, []) # Obtenemos y eliminamos los datos del cliente, nos devuelve un arreglo de WordItem
-        self.emit(client_id, self.results_queue_name, [top_20]) # Enviamos los top k al results_queue
+        self.emit(client_id, self.results_queue_name, [self.result_query_id, top_20]) # Enviamos los top k al results_queue
         self._flush_all(client_id)
 
 def main():

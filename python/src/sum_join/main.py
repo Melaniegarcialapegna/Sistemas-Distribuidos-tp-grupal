@@ -30,6 +30,17 @@ class SumJoinWorker(BaseWorker):
         total[0] += partial_len
         total[1] += partial_abstracts
 
+    def _on_barrier(self,client_id):
+        if client_id in self.totals:
+            total_len, total_abstracts = self.totals.pop(client_id)
+            logging.info(f"Client {client_id}: totals len={total_len} "
+                         f"abstracts={total_abstracts}")
+
+            for routing_key in self.average_routing_keys:
+                self.emit(client_id, self.average_exchange,[total_len, total_abstracts],routing_keys=[routing_key])
+        else:
+            logging.info(f"Client {client_id}: no partial sums on this replica")
+        self._flush_all(client_id)
 
 def main():
     logging.basicConfig(level=logging.INFO)

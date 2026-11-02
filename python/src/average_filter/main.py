@@ -21,11 +21,11 @@ class AverageFilterWorker(BaseWorker):
         self.results_queue = results_queue 
 
         # Create a InputStream for each input
-        queue_coordinaator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_barrier, publish_control=self._publish_control_message)
+        queue_coordinaator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 
         self.recent = InputStream("recent",queue_coordinaator, self._on_recent_data)
 
-        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_barrier)
+        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_total_barrier)
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
 

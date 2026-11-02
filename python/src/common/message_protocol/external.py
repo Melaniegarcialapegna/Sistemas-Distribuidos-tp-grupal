@@ -128,14 +128,14 @@ def receive_row_result(socket, size):
     row = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
     return row
     
-
 def receive_top_result(socket, size):
     payload = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
     top_items = payload[0] if payload and isinstance(payload[0], list) else payload
     return [[item.word, item.total_count()] for item in top_items]
 
 def receive_q5_result(socket, size):
-    pass
+    row = tlv_protocol.deserialize_tlv(_recv_sized(socket, size))
+    return row
 
 
 RECV_MSG_HANDLERS = {

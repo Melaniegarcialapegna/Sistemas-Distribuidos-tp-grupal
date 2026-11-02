@@ -55,12 +55,10 @@ class Client:
 
         if os.path.isdir(input_file):
             parquet_files = sorted(glob.glob(os.path.join(input_file, "*.parquet")))
-            logging.info(f"Se detectó una carpeta. Procesando {len(parquet_files)} archivos .parquet...")
         elif os.path.isfile(input_file):
             parquet_files = [input_file]
-            logging.info("Se detectó un único archivo .parquet.")
         else:
-            raise FileNotFoundError(f"La ruta no es válida: {input_file}")
+            raise FileNotFoundError(f"Invalid file path: {input_file}")
 
         for parquet_file in parquet_files:
             logging.info("Sending article info")

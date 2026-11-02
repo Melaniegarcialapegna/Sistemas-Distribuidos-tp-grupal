@@ -11,7 +11,7 @@ REPLICA_ID = os.environ["REPLICA_ID"]
 AVERAGE_KEY_PREFIX="average_exchange"
 
 class AverageFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host,recent_queue, average_exchange,
+    def __init__(self, batch_size, host,exchange_control, recent_queue, average_exchange,
                  results_queue, tokenizer_replicas, sum_join_amount):
         super().__init__(batch_size,host)
         self.result_query_id = Query.Q5
@@ -21,20 +21,17 @@ class AverageFilterWorker(BaseWorker):
         self.results_queue = results_queue 
 
         # Create a InputStream for each input
-        queue_coordinaator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
+        queue_coordinator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 
-        self.recent = InputStream("recent",queue_coordinaator, self._on_recent_data)
+        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data)
 
         exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_total_barrier)
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
 
-        self.recent_handler = middleware.RabbitMQHandler(host)
-        self.recent_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
-
-        self.totals_handler = middleware.RabbitMQHandler(host)
-        self.totals_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(sum_join_amount)], self.totals.handle_message)
-
+        self.input_handler = middleware.RabbitMQHandler(host)
+        self.input_handler.subscribe_to_queue(recent_queue, self.input_handler.handle_message)
+        self.input_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(sum_join_amount)], self.totals.handle_message)
 
     def process_data(self, client_id, payload):
         #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 
@@ -61,6 +58,7 @@ class AverageFilterWorker(BaseWorker):
         #TODO: ver caso borde en que no me llega ningun promedio pq no hay de antes ¿¿
         for url, lenght in self.store.read_all(client_id):
             self._emit_if_above_average(client_id, url, lenght)
+        self.store.clear(client_id)
 
     #Helpers
     def _emit_if_above_average(self, client_id, url, lenght):

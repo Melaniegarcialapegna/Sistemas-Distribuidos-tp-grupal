@@ -58,15 +58,43 @@ services:
     - ID=0
     - INPUT_QUEUE_NAME=article_language_queue
     - Q1_OUTPUT_QUEUE_NAME=sum_queue
-  sum_joiner_0:
+  sum_join_0:
     build:
       context: ./src/
-      dockerfile: sum_joiner/Dockerfile
-    container_name: sum_joiner_0
+      dockerfile: sum_join/Dockerfile
+    container_name: sum_join_0
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     environment:
-    - BATCH_SIZE=100
-    - ID=0
-    - INPUT_QUEUE_NAME=sum_queue
-    - Q1_OUTPUT_QUEUE_NAME=results_queue
+    - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=0
+    - PREVIOUS_STAGE_REPLICAS=2
+    - SUM_JOIN_EXCHANGE=sum_join
+    - AVERAGE_EXCHANGE=average
+    - AVERAGE_FILTER_AMOUNT=1
+    - BATCH_SIZE=10
+    - PYTHONUNBUFFERED=1
+  sum_0:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      sum_join_0:
+        condition: service_started
+      sum_join_1:
+        condition: service_started
+    environment:
+    - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=sum_0
+    - PREVIOUS_STAGE_REPLICAS=1
+    - INPUT_QUEUE_NAME=abstract_lengths_queue
+    - CONTROL_EXCHANGE_NAME=sum_control
+    - CONTROL_ROUTING_KEY=sum
+    - SUM_JOIN_EXCHANGE=sum_join
+    - SUM_JOIN_AMOUNT=2
+    - BATCH_SIZE=10
+    - PYTHONUNBUFFERED=1

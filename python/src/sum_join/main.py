@@ -46,19 +46,17 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     host = os.environ["RABBITMQ_HOST"]
-    input_queue_name = os.environ["INPUT_QUEUE_NAME"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
-    control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
     sum_join_exchange = os.environ["SUM_JOIN_EXCHANGE"]
-    sum_join_amount = int(os.environ["SUM_JOIN_AMOUNT"])
+    average_exchange = os.environ["AVERAGE_EXCHANGE"]
+    average_filter_amount = int(os.environ["AVERAGE_FILTER_AMOUNT"])
 
-    sum_worker = SumJoinWorker(batch_size, host, input_queue_name, control_exchange_name, control_routing_key, sum_join_exchange, sum_join_amount)
-
-    logging.info(f"Sum replica {REPLICA_ID} started: input={input_queue_name} "
-                 f"output={sum_join_exchange} x{sum_join_amount} previous_replicas={PREVIOUS_STAGE_REPLICAS}")
-    
-    sum_worker.start()
+    worker = SumJoinWorker(batch_size, host, sum_join_exchange,
+                           average_exchange, average_filter_amount)
+    logging.info(f"SumJoin replica {REPLICA_ID} started: "
+                 f"listening {sum_join_exchange}/{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}, "
+                 f"broadcasting to {average_filter_amount} Average filters via {average_exchange}")
+    worker.start()
     return 0
 
 

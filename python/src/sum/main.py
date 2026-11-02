@@ -36,6 +36,7 @@ class SumWorker(BaseWorker):
 
     def _on_barrier(self,client_id):
         if client_id in self.totals:
+            logging.info("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
             total_len, total_abstracts = self.totals.pop(client_id)
             client_id_bytes = client_id.to_bytes((client_id.bit_length() + 7) // 8 or 1, "big")
             routing_key = f"{SUM_JOIN_PREFIX}_{fnv1a_32(client_id_bytes) % self.sum_join_amount}"

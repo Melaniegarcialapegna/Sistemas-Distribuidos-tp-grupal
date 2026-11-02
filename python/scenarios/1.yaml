@@ -46,6 +46,8 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+
+    
   year_filter_0:
     build:
       context: ./src/
@@ -80,3 +82,4 @@ services:
     - CONTROL_EXCHANGE_NAME=language_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+

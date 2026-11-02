@@ -4,9 +4,9 @@ from common.base_worker import BaseWorker
 from common.message_protocol.external import Query
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
-from .input_stream.input_stream import InputStream
+from input_stream.input_stream import InputStream
 from common import middleware
-from .recent_store.recent_store import RecentStore
+from recent_store.recent_store import RecentStore
 
 REPLICA_ID = os.environ["REPLICA_ID"]
 AVERAGE_KEY_PREFIX="average_exchange"
@@ -27,14 +27,14 @@ class AverageFilterWorker(BaseWorker):
         # Create a InputStream for each input
         queue_coordinator = QueueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 
-        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data, on_barrier=self._on_total_barrier)
+        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data)
 
-        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount)
+        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_total_barrier)
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
 
         self.input_handler = middleware.RabbitMQHandler(host)
-        self.input_handler.subscribe_to_queue(recent_queue, self.input_handler.handle_message)
+        self.input_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
 
         self.input_handler.subscribe_to_exchange(exchange_control,[f"{AVERAGE_KEY_PREFIX}_{i}" for i in range(tokenizer_replicas)], self.recent.handle_message)
 

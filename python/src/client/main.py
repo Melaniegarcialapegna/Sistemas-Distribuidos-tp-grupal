@@ -14,7 +14,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
-EXPECTED_QUERIES = {message_protocol.external.Query.Q1} # add to config
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1,message_protocol.external.Query.Q2, message_protocol.external.Query.Q5} # add to config
 
 class Client:
 

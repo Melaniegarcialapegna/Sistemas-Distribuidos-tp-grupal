@@ -5,9 +5,11 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - average_filter_0
-    - sum_join_0
-    - sum_0
+    -  tokenizer_0
+    -  sum_0
+    -  sum_join_0
+    -  average_filter_0
+    -  gateway
     environment:
     - INPUT_FILE=/datasets/test.parquet
     - PYTHONUNBUFFERED=1
@@ -48,6 +50,34 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+  tokenizer_0:
+    build:
+      context: ./src/
+      dockerfile: tokenizer/Dockerfile
+    container_name: tokenizer_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_QUEUE_NAME=tokenizer_queue
+    - Q3_4_OUTPUT_QUEUE_NAME=words_without_stopwords_queue
+    - Q5_OUTPUT_QUEUE_NAME=abstracts_length_queue
+    - CONTROL_EXCHANGE_NAME=tokenizer_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+  sum_0:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
+    depends_on:
+    - gateway
+    environment:
+    - BATCH_SIZE=100
+    - ID=0
+    - INPUT_QUEUE_NAME=article_language_queue
+    - Q1_OUTPUT_QUEUE_NAME=sum_queue
+    - REPLICA_ID=sum_0
+    - Q5_SUM_OUTPUT_QUEUE_NAME=
   sum_join_0:
     build:
       context: ./src/
@@ -63,27 +93,6 @@ services:
     - SUM_JOIN_EXCHANGE=sum_join
     - AVERAGE_EXCHANGE=average
     - AVERAGE_FILTER_AMOUNT=1
-    - BATCH_SIZE=10
-    - PYTHONUNBUFFERED=1
-  sum_0:
-    build:
-      context: ./src/
-      dockerfile: sum/Dockerfile
-    container_name: sum_0
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      sum_join_0:
-        condition: service_started
-    environment:
-    - RABBITMQ_HOST=rabbitmq
-    - REPLICA_ID=sum_0
-    - PREVIOUS_STAGE_REPLICAS=1
-    - INPUT_QUEUE_NAME=abstract_lengths_queue
-    - CONTROL_EXCHANGE_NAME=sum_control
-    - CONTROL_ROUTING_KEY=sum
-    - SUM_JOIN_EXCHANGE=sum_join
-    - SUM_JOIN_AMOUNT=2
     - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1
   average_filter_0:

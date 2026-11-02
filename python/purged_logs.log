@@ -1,0 +1,209 @@
+mkdir -p output
+COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
+#1 [internal] load local bake definitions
+#1 reading from stdin 3.61kB done
+#1 DONE 0.0s
+
+#2 [sum_0 internal] load build definition from Dockerfile
+#2 transferring dockerfile: 149B done
+#2 DONE 0.0s
+
+#3 [tokenizer_0 internal] load build definition from Dockerfile
+#3 transferring dockerfile: 219B done
+#3 DONE 0.0s
+
+#4 transferring dockerfile: 107B done
+#4 DONE 0.0s
+
+#5 [sum_join_0 internal] load build definition from Dockerfile
+#5 transferring dockerfile: 154B done
+#5 DONE 0.0s
+
+#6 [tokenizer_0 internal] load metadata for docker.io/library/python:3-alpine
+#6 ...
+
+#7 [average_filter_0 internal] load build definition from Dockerfile
+#7 transferring dockerfile: 159B done
+#7 DONE 0.0s
+
+#8 [gateway internal] load build definition from Dockerfile
+#8 transferring dockerfile: 153B done
+#8 DONE 0.0s
+
+#9 [client_0 internal] load build definition from Dockerfile
+#9 transferring dockerfile: 178B done
+#9 DONE 0.0s
+
+#6 [client_0 internal] load metadata for docker.io/library/python:3-alpine
+#6 DONE 1.0s
+
+#10 DONE 1.0s
+
+#11 [sum_0 internal] load .dockerignore
+#11 transferring context: 2B done
+#11 DONE 0.0s
+
+#12 [tokenizer_0 1/4] FROM docker.io/library/python:3-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211
+#12 DONE 0.0s
+
+#13 transferring context: 2B done
+#13 DONE 0.0s
+
+#14 [sum_0 internal] load build context
+#14 transferring context: 4.84kB done
+#14 DONE 0.0s
+
+#15 [gateway internal] load build context
+#15 transferring context: 11.52kB done
+#15 DONE 0.0s
+
+#16 DONE 0.0s
+
+#17 [average_filter_0 internal] load build context
+#17 transferring context: 2.02kB done
+#17 DONE 0.0s
+
+#18 [gateway 3/4] COPY common ./common
+#18 CACHED
+
+#19 [sum_0 3/4] COPY common ./common
+#19 CACHED
+
+#20 [tokenizer_0 internal] load build context
+#20 transferring context: 1.67kB done
+#20 DONE 0.0s
+
+#21 [client_0 internal] load build context
+#21 transferring context: 6.34kB done
+#21 DONE 0.0s
+
+#22 [gateway 4/4] COPY gateway .
+#22 CACHED
+
+#23 CACHED
+
+#24 [sum_0 4/4] COPY sum .
+#24 CACHED
+
+#25 [average_filter_0 3/4] COPY common ./common
+#25 CACHED
+
+#26 [average_filter_0 4/4] COPY average_filter .
+#26 CACHED
+
+#27 [client_0 4/5] COPY common ./common
+#27 CACHED
+
+#28 [client_0 3/5] RUN pip3 install pyarrow
+#28 CACHED
+
+#29 [client_0 5/5] COPY client .
+#29 CACHED
+
+#30 [tokenizer_0 4/6] RUN python3 -m nltk.downloader stopwords
+#30 CACHED
+
+#31 [tokenizer_0 5/6] COPY common ./common
+#31 CACHED
+
+#32 [tokenizer_0 3/6] RUN pip3 install nltk
+#32 CACHED
+
+#33 [tokenizer_0 6/6] COPY tokenizer .
+#33 CACHED
+
+#34 [sum_join_0 internal] load build context
+#34 transferring context: 4.53kB done
+#34 DONE 0.0s
+
+#35 [sum_join_0 3/4] COPY common ./common
+#35 CACHED
+
+#36 CACHED
+
+#37 [sum_join_0 4/4] COPY sum_join .
+#37 CACHED
+
+#38 [sum_join_0] exporting to image
+#38 exporting layers done
+#38 writing image sha256:8a11233019f0e5be86ff5d966d7ad38e33f1dd4e88cec40c59e240bb655349e2
+#38 writing image sha256:8a11233019f0e5be86ff5d966d7ad38e33f1dd4e88cec40c59e240bb655349e2 0.0s done
+#38 naming to docker.io/library/python-sum_join_0 0.0s done
+#38 DONE 0.1s
+
+#39 [sum_0] exporting to image
+#39 exporting layers done
+#39 writing image sha256:0a4fe32ab30482e03e27b8a8de38394c58745c350a471af35b2062a06cdd906c 0.0s done
+#39 naming to docker.io/library/python-sum_0 done
+#39 DONE 0.0s
+
+#40 [gateway] exporting to image
+#40 exporting layers done
+#40 writing image sha256:d1accbe1ab36d891c03213e8f41c4ca8b15302b96a12608a3ab1a97afb6d9326 0.0s done
+#40 naming to docker.io/library/python-gateway done
+#40 DONE 0.0s
+
+#41 exporting layers done
+#41 writing image sha256:5217463c96bb96fe40e0780e47ede94172c672a1518448f39f39f44f21ee0032 0.0s done
+#41 DONE 0.0s
+
+#42 [tokenizer_0] exporting to image
+#42 exporting layers done
+#42 writing image sha256:786d4ad282908c023b42bbe2f83a0f82b6055633a2ab6ff7e41e94da0ac33be6 0.0s done
+#42 naming to docker.io/library/python-tokenizer_0 done
+#42 DONE 0.0s
+
+#43 [average_filter_0] exporting to image
+#43 exporting layers done
+#43 writing image sha256:85b69609824c8ba2e8a2871d4c9000f760397933f193aeae8f36ac7f2bbe64cb 0.0s done
+#43 naming to docker.io/library/python-average_filter_0 0.0s done
+#43 DONE 0.0s
+
+#44 [client_0] exporting to image
+#44 exporting layers done
+#44 writing image sha256:616edeb12588779e79317431d62b5af3d5cea356855d2c1b54f3139c740d4602 0.0s done
+#44 naming to docker.io/library/python-client_0 0.0s done
+#44 DONE 0.1s
+
+#45 [sum_0] resolving provenance for metadata file
+#45 DONE 0.1s
+
+#46 [average_filter_0] resolving provenance for metadata file
+#46 DONE 0.0s
+
+#47 [gateway] resolving provenance for metadata file
+#47 DONE 0.1s
+
+#48 DONE 0.1s
+
+#49 [client_0] resolving provenance for metadata file
+#49 DONE 0.0s
+
+#50 [tokenizer_0] resolving provenance for metadata file
+#50 DONE 0.0s
+
+#51 [sum_join_0] resolving provenance for metadata file
+#51 DONE 0.0s
+docker compose -f docker-compose.yaml logs --follow
+tokenizer_0  | Traceback (most recent call last):
+gateway      | INFO:root:Listening to connections
+tokenizer_0  |   File "//main.py", line 68, in <module>
+tokenizer_0  |     main()
+tokenizer_0  |     ~~~~^^
+tokenizer_0  |   File "//main.py", line 57, in main
+tokenizer_0  |     q5_sum_queue = os.environ["Q5_SUM_OUTPUT_QUEUE_NAME"]
+tokenizer_0  |                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tokenizer_0  |   File "<frozen os>", line 729, in __getitem__
+tokenizer_0  | KeyError: 'Q5_SUM_OUTPUT_QUEUE_NAME'
+sum_join_0   | INFO:root:SumJoin replica 0 started: listening sum_join/sum_join_exchange_0, broadcasting to 1 Average filters via average
+sum_0        | Traceback (most recent call last):
+sum_0        |   File "//main.py", line 73, in <module>
+sum_0        |     main()
+sum_0        |     ~~~~^^
+sum_0        |   File "//main.py", line 55, in main
+sum_0        |            ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+sum_0        |   File "<frozen os>", line 729, in __getitem__
+client_0          | INFO:root:Conectando
+client_0          | INFO:root:¡Conectado exitosamente al Gateway!
+gateway           | INFO:root:A new client has connected
+client_0          | INFO:root:Sending article info

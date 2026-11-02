@@ -91,7 +91,24 @@ services:
     - BATCH_SIZE=100
     - ID=0
     - INPUT_QUEUE_NAME=article_sections_queue
-    - Q2_OUTPUT_QUEUE_NAME=results_queue
+    - Q2_OUTPUT_QUEUE_NAME=image_queue
     - CONTROL_EXCHANGE_NAME=biography_filter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+
+
+  image_downloader_0:
+    build:
+      context: ./src/
+      dockerfile: image_downloader/Dockerfile
+    container_name: image_downloader_0
+    depends_on:
+    - biography_filter_0
+    environment:
+    - BATCH_SIZE=100
+    - ID=0
+    - INPUT_QUEUE_NAME=image_queue
+    - Q2_OUTPUT_QUEUE_NAME=results_queue
+    - CONTROL_EXCHANGE_NAME=image_downloader_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq

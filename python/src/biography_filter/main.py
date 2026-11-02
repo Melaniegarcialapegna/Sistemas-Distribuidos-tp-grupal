@@ -20,14 +20,13 @@ class BiographyFilterWorker(BaseWorker):
         )
         self.input_queue_name = input_queue_name
         self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
-        self.result_query_id = Query.Q2
 
     def process_data(self, client_id, message):
         # Base worker llama a este metodo sobre cada articulo dentro del batch
         # message es una lista con los parametros necesarios para esta etapa del articulo
         sections, name, url, img_url = message
         if self.has_biography_section(sections):
-            q2_projection = [self.result_query_id, name, url, img_url]
+            q2_projection = [name, url, img_url]
             self.emit(client_id, self.q2_output_queue_name, q2_projection)
 
     def has_biography_section(self, sections):

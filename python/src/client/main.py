@@ -1,3 +1,4 @@
+import csv
 import glob
 import os
 import logging
@@ -15,7 +16,7 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
-EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2, message_protocol.external.Query.Q3} # add to config
+EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2, message_protocol.external.Query.Q3, message_protocol.external.Query.Q4} # add to config
 
 class Client:
 
@@ -90,8 +91,7 @@ class Client:
                 if msg_type == external.MsgType.QUERY_RESULT_BATCH:
                     query_id, rows = payload
                     rows_per_query[query_id] = rows_per_query.get(query_id, 0) + len(rows)
-                    for row in rows:
-                        print(f"Q{query_id}\n{row}")
+                    self._save_rows(query_id, rows)
                 elif msg_type == external.MsgType.QUERY_DONE:
                     logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas") 
                     queries_done.add(payload)
@@ -114,6 +114,17 @@ class Client:
         if isinstance(image, dict):
             record["image"] = image.get("content_url","")
         return record
+
+    def _save_rows(self, query_id, rows):
+
+        output_dir = os.environ.get("OUTPUT_DIR", "output")
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.join(output_dir, f"result_Q{query_id}.csv")
+
+        with open(filename, "a", newline="") as csvfile:
+            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+            for row in rows:
+                csv_writer.writerow(row)
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)

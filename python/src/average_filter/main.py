@@ -26,9 +26,9 @@ class AverageFilterWorker(BaseWorker):
         # Create a InputStream for each input
         queue_coordinator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 
-        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data)
+        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data, on_barrier=self._on_total_barrier)
 
-        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_total_barrier)
+        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount)
 
         self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
 
@@ -51,25 +51,27 @@ class AverageFilterWorker(BaseWorker):
             self._emit_if_above_average(client_id, url, lenght)
 
     def _on_recent_barrier(self, client_id):
-        pass
+        if client_id in self.clients:
+            self._flush_all(client_id)
+            del self.clients[client_id]
 
     def _on_total_data(self, client_id, payload):
         total_len, total_abstracts = payload
         average = total_len / total_abstracts if total_abstracts > 0 else 0
         self.clients[client_id] = average
         logging.info(f"Client {client_id}: average={average}")
-
-    def _on_total_barrier(self, client_id):
-        #TODO: ver caso borde en que no me llega ningun promedio pq no hay de antes ¿¿
         for url, lenght in self.store.read_all(client_id):
             self._emit_if_above_average(client_id, url, lenght)
-        self.store.clear(client_id)
-
+    
+    def _on_total_barrier(self, client_id):
+        self._on_recent_barrier(client_id)
+        
     #Helpers
     def _emit_if_above_average(self, client_id, url, lenght):
         average = self.clients[client_id]
         if lenght > average:
             self.emit(client_id, self.results_queue, [self.result_query_id,url,lenght])
+
 
 
 def main():

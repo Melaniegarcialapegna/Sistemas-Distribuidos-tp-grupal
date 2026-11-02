@@ -24,6 +24,9 @@ class AverageFilterWorker(BaseWorker):
         self.store_path = store_path
         self.store = RecentStore(store_path)
 
+        self.control_exchange_name = exchange_control
+        self.control_routing_key = ""
+
         # Create a InputStream for each input
         queue_coordinator = QueueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 

@@ -9,7 +9,7 @@ class InputStream:
 
     def handle_message(self, raw,ack,nack):
         try:
-            message = message.protocol.internal.TLVSerializer.deserialize_message(raw)
+            message = message_protocol.internal.TLVDeserializer.deserialize_message(raw)
             message.visit(self)
             ack()
         except Exception as e:

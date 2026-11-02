@@ -5,7 +5,9 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - year_filter_0
+    - average_filter_0
+    - sum_join_0
+    - sum_0
     environment:
     - INPUT_FILE=/datasets/test.parquet
     - PYTHONUNBUFFERED=1
@@ -46,37 +48,63 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-  year_filter_0:
+  sum_join_0:
     build:
       context: ./src/
-      dockerfile: year_filter/Dockerfile
-    container_name: year_filter_0
+      dockerfile: sum_join/Dockerfile
+    container_name: sum_join_0
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     environment:
-    - BATCH_SIZE=100
-    - ID=0
-    - INPUT_QUEUE_NAME=year_filter_queue
-    - Q1_OUTPUT_QUEUE_NAME=article_language_queue
-    - Q2_OUTPUT_QUEUE_NAME=article_sections_queue
-    - CONTROL_EXCHANGE_NAME=year_filter_control
-    - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=0
+    - PREVIOUS_STAGE_REPLICAS=2
+    - SUM_JOIN_EXCHANGE=sum_join
+    - AVERAGE_EXCHANGE=average
+    - AVERAGE_FILTER_AMOUNT=1
+    - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1
-
-
-  language_filter_0:
+  sum_0:
     build:
       context: ./src/
-      dockerfile: language_filter/Dockerfile
-    container_name: language_filter_0
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
     depends_on:
-    - year_filter_0
+      rabbitmq:
+        condition: service_healthy
+      sum_join_0:
+        condition: service_started
     environment:
-    - BATCH_SIZE=100
-    - ID=0
-    - INPUT_QUEUE_NAME=article_language_queue
-    - Q1_OUTPUT_QUEUE_NAME=results_queue
-    - CONTROL_EXCHANGE_NAME=language_filter_control
-    - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=sum_0
+    - PREVIOUS_STAGE_REPLICAS=1
+    - INPUT_QUEUE_NAME=abstract_lengths_queue
+    - CONTROL_EXCHANGE_NAME=sum_control
+    - CONTROL_ROUTING_KEY=sum
+    - SUM_JOIN_EXCHANGE=sum_join
+    - SUM_JOIN_AMOUNT=2
+    - BATCH_SIZE=10
+    - PYTHONUNBUFFERED=1
+  average_filter_0:
+    build:
+      context: ./src/
+      dockerfile: average_filter/Dockerfile
+    container_name: average_filter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      sum_join_0:
+        condition: service_started
+    environment:
+    - RABBITMQ_HOST=rabbitmq
+    - BATCH_SIZE=10
+    - REPLICA_ID=average_filter_0
+    - CONTROL_EXCHANGE_NAME=average_filter_control
+    - RECENT_QUEUE_NAME=recent_queue
+    - AVERAGE_EXCHANGE=average
+    - RESULTS_QUEUE_NAME=results_queue
+    - TOKENIZER_REPLICAS=1
+    - SUM_JOIN_AMOUNT=1
+    - STORE_PATH=/tmp/average_filter_store
+    - PYTHONUNBUFFERED=1

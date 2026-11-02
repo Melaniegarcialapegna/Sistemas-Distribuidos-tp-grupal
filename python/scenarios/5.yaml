@@ -85,8 +85,6 @@ services:
         condition: service_healthy
       sum_join_0:
         condition: service_started
-      sum_join_1:
-        condition: service_started
     environment:
     - RABBITMQ_HOST=rabbitmq
     - REPLICA_ID=sum_0
@@ -97,4 +95,26 @@ services:
     - SUM_JOIN_EXCHANGE=sum_join
     - SUM_JOIN_AMOUNT=2
     - BATCH_SIZE=10
+    - PYTHONUNBUFFERED=1
+average_filter_0:
+    build:
+      context: ./src/
+      dockerfile: average_filter/Dockerfile
+    container_name: average_filter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      sum_join_0:
+        condition: service_started
+    environment:
+    - RABBITMQ_HOST=rabbitmq
+    - BATCH_SIZE=10
+    - REPLICA_ID=average_filter_0
+    - CONTROL_EXCHANGE_NAME=average_filter_control
+    - RECENT_QUEUE_NAME=recent_queue
+    - AVERAGE_EXCHANGE=average
+    - RESULTS_QUEUE_NAME=results_queue
+    - TOKENIZER_REPLICAS=1
+    - SUM_JOIN_AMOUNT=1
+    - STORE_PATH=/tmp/average_filter_store
     - PYTHONUNBUFFERED=1

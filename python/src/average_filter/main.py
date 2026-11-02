@@ -1,8 +1,8 @@
 import os
 import logging
 from common.base_worker import BaseWorker
-from common.message_protocol import Query
-from common.eof_coordinator.queue_eof_coordinator import QueEofCoordinator
+from common.message_protocol.external import Query
+from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
 from .input_stream.input_stream import InputStream
 from common import middleware
@@ -22,9 +22,10 @@ class AverageFilterWorker(BaseWorker):
         self.results_queue = results_queue 
 
         self.store_path = store_path
+        self.store = RecentStore(store_path)
 
         # Create a InputStream for each input
-        queue_coordinator = QueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
+        queue_coordinator = QueueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
 
         self.recent = InputStream("recent",queue_coordinator, self._on_recent_data, on_barrier=self._on_total_barrier)
 
@@ -79,8 +80,16 @@ def main():
 
     host = os.environ["RABBITMQ_HOST"]
     batch_size = int(os.environ.get("BATCH_SIZE", 10))
+    exchange_control = os.environ["CONTROL_EXCHANGE_NAME"]
+    recent_queue = os.environ["RECENT_QUEUE_NAME"]
+    average_exchange = os.environ["AVERAGE_EXCHANGE"]
+    results_queue = os.environ["RESULTS_QUEUE_NAME"]
+    tokenizer_replicas = int(os.environ.get("TOKENIZER_REPLICAS", "1"))
+    sum_join_amount = int(os.environ["SUM_JOIN_AMOUNT"])
+    store_path = os.environ.get("STORE_PATH")
 
-    worker = AverageFilterWorker(batch_size,host)
+    worker = AverageFilterWorker(batch_size, host,exchange_control, recent_queue, average_exchange,
+                 results_queue, tokenizer_replicas, sum_join_amount,store_path)
 
     worker.start()
     return 0

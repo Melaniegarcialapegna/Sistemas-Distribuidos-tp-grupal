@@ -11,12 +11,13 @@ services:
     -  average_filter_0
     -  gateway
     environment:
-    - INPUT_FILE=/datasets/test.parquet
+    - INPUT_FILE=/datasets/test2.parquet
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
+    - ./output:/output
   gateway:
     build:
       context: ./src/

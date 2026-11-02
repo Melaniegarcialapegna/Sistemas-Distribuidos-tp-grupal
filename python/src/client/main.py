@@ -79,7 +79,7 @@ class Client:
                     query_id, rows = payload
                     rows_per_query[query_id] = rows_per_query.get(query_id, 0) + len(rows)
                     for row in rows:
-                        print(f"Q{query_id}: {row}")
+                        print(f"Q{query_id}\n{row}")
                 elif msg_type == external.MsgType.QUERY_DONE:
                     logging.info(f"Consulta {payload} terminada: {rows_per_query.get(payload, 0)} filas") 
                     queries_done.add(payload)

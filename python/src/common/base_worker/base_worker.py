@@ -124,6 +124,10 @@ class BaseWorker(ABC):
         self.input_handler.subscribe_to_queue(queue_name, self._handle_message)
         self.input_handler.subscribe_to_exchange(control_exchange_name, [control_routing_key], callback=self._handle_message)
 
+    def _create_exchange_input_handler(self, exchange_name, routing_keys):
+        self.input_handler = middleware.RabbitMQHandler(self.host)
+        self.input_handler.subscribe_to_exchange(exchange_name, routing_keys, callback=self._handle_message)
+
     def _publish_control_message(self, payload, client_id):
         message = msg.ControlMessageType(payload, client_id)
         serialized_message = message_protocol.internal.TLVSerializer.serialize_message(message)

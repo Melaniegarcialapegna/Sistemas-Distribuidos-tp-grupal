@@ -96,6 +96,8 @@ services:
     - CONTROL_EXCHANGE_NAME=biography_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+
+
   image_downloader_0:
     build:
       context: ./src/

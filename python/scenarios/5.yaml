@@ -1,185 +1,40 @@
 services:
-  ciaahtbord_0:
+  client_0:
     build:
       context: ./src/
       dockerfile: client/Dockerfile
-    container_name: ciaahtbord_0
+    container_name: client_0
     depends_on:
-    - eqtatg_0
-    - eqtatg_1
-    - eqtatg_2
+    - year_filter_0
     environment:
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/test.parquet
     - PYTHONUNBUFFERED=1
-    - SERVER_HOST=uoipzt
+    - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
-    - ./output:/output
-  ciaahtbord_1:
+  gateway:
     build:
       context: ./src/
-      dockerfile: client/Dockerfile
-    container_name: ciaahtbord_1
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
     depends_on:
-    - eqtatg_0
-    - eqtatg_1
-    - eqtatg_2
+      rabbitmq:
+        condition: service_healthy
     environment:
-    - INPUT_FILE=/datasets/input_1.csv
-    - OUTPUT_FILE=/output/output_1.csv
+    - RABBITMQ_HOST=rabbitmq
+    - OUTPUT_QUEUE=input_queue
     - PYTHONUNBUFFERED=1
-    - SERVER_HOST=uoipzt
+    - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    volumes:
-    - ./datasets:/datasets
-    - ./output:/output
-  ciaahtbord_2:
-    build:
-      context: ./src/
-      dockerfile: client/Dockerfile
-    container_name: ciaahtbord_2
-    depends_on:
-    - eqtatg_0
-    - eqtatg_1
-    - eqtatg_2
-    environment:
-    - INPUT_FILE=/datasets/input_2.csv
-    - OUTPUT_FILE=/output/output_2.csv
-    - PYTHONUNBUFFERED=1
-    - SERVER_HOST=uoipzt
-    - SERVER_PORT=5678
-    volumes:
-    - ./datasets:/datasets
-    - ./output:/output
-  ckcariaxuf_0:
-    build:
-      context: ./src/
-      dockerfile: aggregation/Dockerfile
-    container_name: ckcariaxuf_0
-    depends_on:
-    - oxnflfxovn
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=0
-    - MOM_HOST=szgpulnqog
-    - OUTPUT_QUEUE=bqdchp
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-    - TOP_SIZE=3
-  ckcariaxuf_1:
-    build:
-      context: ./src/
-      dockerfile: aggregation/Dockerfile
-    container_name: ckcariaxuf_1
-    depends_on:
-    - oxnflfxovn
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=1
-    - MOM_HOST=szgpulnqog
-    - OUTPUT_QUEUE=bqdchp
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-    - TOP_SIZE=3
-  ckcariaxuf_2:
-    build:
-      context: ./src/
-      dockerfile: aggregation/Dockerfile
-    container_name: ckcariaxuf_2
-    depends_on:
-    - oxnflfxovn
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=2
-    - MOM_HOST=szgpulnqog
-    - OUTPUT_QUEUE=bqdchp
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-    - TOP_SIZE=3
-  eqtatg_0:
-    build:
-      context: ./src/
-      dockerfile: sum/Dockerfile
-    container_name: eqtatg_0
-    depends_on:
-    - ckcariaxuf_0
-    - ckcariaxuf_1
-    - ckcariaxuf_2
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=0
-    - INPUT_QUEUE=vxwdcotugj
-    - MOM_HOST=szgpulnqog
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-  eqtatg_1:
-    build:
-      context: ./src/
-      dockerfile: sum/Dockerfile
-    container_name: eqtatg_1
-    depends_on:
-    - ckcariaxuf_0
-    - ckcariaxuf_1
-    - ckcariaxuf_2
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=1
-    - INPUT_QUEUE=vxwdcotugj
-    - MOM_HOST=szgpulnqog
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-  eqtatg_2:
-    build:
-      context: ./src/
-      dockerfile: sum/Dockerfile
-    container_name: eqtatg_2
-    depends_on:
-    - ckcariaxuf_0
-    - ckcariaxuf_1
-    - ckcariaxuf_2
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - ID=2
-    - INPUT_QUEUE=vxwdcotugj
-    - MOM_HOST=szgpulnqog
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-  oxnflfxovn:
-    build:
-      context: ./src/
-      dockerfile: join/Dockerfile
-    container_name: oxnflfxovn
-    depends_on:
-    - uoipzt
-    environment:
-    - AGGREGATION_AMOUNT=3
-    - AGGREGATION_PREFIX=ckcariaxuf
-    - INPUT_QUEUE=bqdchp
-    - MOM_HOST=szgpulnqog
-    - OUTPUT_QUEUE=zqjpgke
-    - PYTHONUNBUFFERED=1
-    - SUM_AMOUNT=3
-    - SUM_PREFIX=eqtatg
-    - TOP_SIZE=3
-  szgpulnqog:
+    - RESULTS_QUEUE=results_queue
+    - TOKENIZER_QUEUE=tokenizer_queue
+    - YEAR_FILTER_QUEUE=year_filter_queue
+  rabbitmq:
     build:
       context: ./src/rabbitmq
       dockerfile: Dockerfile
-    container_name: szgpulnqog
+    container_name: rabbitmq
     environment:
     - RABBITMQ_LOG_LEVELS=error
     healthcheck:
@@ -191,18 +46,55 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-  uoipzt:
+  sum_worker_0:
     build:
       context: ./src/
-      dockerfile: gateway/Dockerfile
-    container_name: uoipzt
+      dockerfile: sum_worker/Dockerfile
+    container_name: sum_worker_0
     depends_on:
-      szgpulnqog:
+    - gateway
+    environment:
+    - BATCH_SIZE=100
+    - ID=0
+    - INPUT_QUEUE_NAME=article_language_queue
+    - Q1_OUTPUT_QUEUE_NAME=sum_queue
+  sum_join_0:
+    build:
+      context: ./src/
+      dockerfile: sum_join/Dockerfile
+    container_name: sum_join_0
+    depends_on:
+      rabbitmq:
         condition: service_healthy
     environment:
-    - INPUT_QUEUE=zqjpgke
-    - MOM_HOST=szgpulnqog
-    - OUTPUT_QUEUE=vxwdcotugj
+    - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=0
+    - PREVIOUS_STAGE_REPLICAS=2
+    - SUM_JOIN_EXCHANGE=sum_join
+    - AVERAGE_EXCHANGE=average
+    - AVERAGE_FILTER_AMOUNT=1
+    - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1
-    - SERVER_HOST=uoipzt
-    - SERVER_PORT=5678
+  sum_0:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      sum_join_0:
+        condition: service_started
+      sum_join_1:
+        condition: service_started
+    environment:
+    - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID=sum_0
+    - PREVIOUS_STAGE_REPLICAS=1
+    - INPUT_QUEUE_NAME=abstract_lengths_queue
+    - CONTROL_EXCHANGE_NAME=sum_control
+    - CONTROL_ROUTING_KEY=sum
+    - SUM_JOIN_EXCHANGE=sum_join
+    - SUM_JOIN_AMOUNT=2
+    - BATCH_SIZE=10
+    - PYTHONUNBUFFERED=1

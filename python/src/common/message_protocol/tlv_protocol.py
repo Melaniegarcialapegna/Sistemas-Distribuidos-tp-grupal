@@ -3,6 +3,7 @@ TYPE_REPRESENTATIONS = {
     "STRING": 2,
     "BYTES": 3,
     "FLOAT": 4,
+    "LIST": 5,
 }
 
 
@@ -57,10 +58,23 @@ def serialize_float(value):
     # Como es para la Q5 recien se puede posponer por el moemento.
     raise NotImplementedError("Float serialization is not implemented yet.")
 
+def serialize_list(list):
+    """
+    Serialize a list into a TLV format.
+
+    :param list: A list of int and string objects to be serialized.
+    :return: A bytes object representing the serialized TLV data for the list.
+    """
+    serialized_data = serialize_tlv(list)
+    length = len(serialized_data)
+    type_byte = TYPE_REPRESENTATIONS['LIST'].to_bytes(1, "big")
+    return type_byte + length.to_bytes(LENGTH_BYTES, "big") + serialized_data
+
 SERIALIZATION_METHODS = {
     int: serialize_int,
     str: serialize_string,
     bytes: serialize_bytes,
+    list: serialize_list,
     float: serialize_float,
 }
 
@@ -112,6 +126,7 @@ DESERIALIZATION_METHODS = {
     TYPE_REPRESENTATIONS['STRING']: deserialize_string,
     TYPE_REPRESENTATIONS['BYTES']: lambda x: x,  # bytes ya vienen encodeados
     TYPE_REPRESENTATIONS['FLOAT']: deserialize_float,
+    TYPE_REPRESENTATIONS['LIST']: lambda x: deserialize_tlv(x),
 }
 def deserialize_tlv(data):
     """

@@ -154,7 +154,7 @@ def receive_q2_result(socket, size):
     row = (
         f" 📖 Name     : {name}\n"
         f" 🔗 URL      : {url}\n"
-        f" 📸 {img_status}"
+        f" 📸 {img_status}\n"
     )
     return row
 

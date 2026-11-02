@@ -30,9 +30,8 @@ switch:
 	@echo Escenarios de prueba:
 	@echo "1) Un cliente, una sola réplica de cada elemento"
 	@echo "2) Múltiples clientes, una sola réplica de cada elemento"
-	@echo "3) Múltiples clientes, sum replicado, un solo aggregation" 
-	@echo "4) Múltiples clientes, múltiples réplicas"
-	@echo "5) Múltiples clientes, múltiples réplicas, nombres al azar"
-	@read -p "Selecciona uno [1-5]: " option;	\
+	@echo "3) Un cliente, múltiples réplicas de algunos elementos"
+	@echo "4) Múltiples clientes, múltiples réplicas de todos los elementos"
+	@read -p "Selecciona uno [1-4]: " option;	\
 	cp ./scenarios/$${option}.yaml docker-compose.yaml
 .PHONY: switch

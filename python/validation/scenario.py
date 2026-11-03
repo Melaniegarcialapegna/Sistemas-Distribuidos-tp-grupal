@@ -2,19 +2,32 @@
 Corre un escenario de prueba para las queries.
 
 
-Main tiene tres modos de ejecucion:
-- python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas)
-- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes y valida
-- python3 validation/scenario.py docker-compose.yaml --info -> solo muestra que clientes hay y sus rutas (no valida)
+Main tiene cuatro modos de ejecucion:
+- python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas y los resultados ya estan en los csv)
+
+- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes
+
+- python3 validation/scenario.py docker-compose.yaml --info -> solo muestra que clientes hay y sus rutas (no valida). Unicamente es para ver que el compose esta bien armado.
+
+RECOMENDADA:) (el resto sirven mas para debuggear que otra cosa)
+
+- python3 validation/scenario.py docker-compose.yaml --run -> es una combinacion de las dos primeras opciones. Espera a los clientes y luego valida los resultados. Se puede usar para correr todo de una vez.
+
+Ademas limpia el output/ de corridas anteriores, levanta el compose espera a los clientes, valida y vuelve a bakar todo.
+
 
 Los exit codes son:
 0: todo OK
 1: hubo algun FAIL en los resultados de los clientes
 2: hubo un error en la ejecucion del escenario (ej: no se encontro el docker-compose.yaml, algun cliente termino con error, input no existe, etc..)
 
+
 """
+from dataclasses import dataclass
+import shutil
 import subprocess
 import sys
+from typing import Counter
 import yaml 
 import os
 import compare #TODO
@@ -66,14 +79,14 @@ def await_client_containers(client_names, timeout=TIMEOUT_DEFAULT):
 
 
 # LEER DEL docker-compose----
-
+@dataclass
 class ClientConfig:
     """
     Tiene la info que se necesita del cliente para poder validar sus resultados 
     """
     name : str 
-    input_path: str #la carpeta que se le da al cliente como input
-    output_path: str #carpeta en donde cliente escribe los resultados
+    input_file: str #la carpeta que se le da al cliente como input
+    output_dir: str #carpeta en donde cliente escribe los resultados
     queries: tuple #queries que se espera que haya respondido
 
 def load_services(compose_path):
@@ -91,6 +104,7 @@ def load_services(compose_path):
     services = compose.get("services") if isinstance(compose, dict) else None
     if not isinstance(services, dict) or not services:
         raise ScenarioError(f"{compose_path} no tiene la seccion 'services'")
+    return services
 
 def find_client_names(services):
     """
@@ -108,7 +122,7 @@ def find_enviroment_variable(environment,target):
     Busca el valor de la variable target en el enviroment de un servicio.
     Devuelve None si no se encuentra. 
     """
-    if isinstance(environment, list):
+    if isinstance(environment, dict):
         value = environment.get(target)
         return None if value is None else str(value)
     for entry in environment or []:
@@ -130,19 +144,19 @@ def container_path_to_host(container_path,volumes, compose_dir):
 
         host_dir,container_dir = parts[0], parts[1].rstrip("/")
 
-        if not host_dir.startswith(".","/","~"): #no es una ruta valida
+        if not host_dir.startswith((".","/","~")): #no es una ruta valida
             continue
 
         if container_path == container_dir or container_path.startswith(container_dir + "/"):
             if best is None or len(container_dir) > len(best[1]):
                 best = (host_dir, container_dir)
 
-        if best is None:
-            raise ScenarioError(f"La ruta {container_path} no esta montada con ningun volumen del contenedor.")
+    if best is None:
+        raise ScenarioError(f"La ruta {container_path} no esta montada con ningun volumen del contenedor.")
 
-        host_dir,container_dir = best
-        rest = container_path[len(container_dir):].lstrip("/")
-        return os.path.normpath(os.path.join(compose_dir, os.path.expanduser(host_dir), rest))
+    host_dir,container_dir = best
+    rest = container_path[len(container_dir):].lstrip("/")
+    return os.path.normpath(os.path.join(compose_dir, os.path.expanduser(host_dir), rest))
 
 def parse_queries(value):
     if not value: return ALL_QUERIES
@@ -164,18 +178,18 @@ def read_client_config(name, service, compose_dir):
     environment = service.get("environment")
     volumes = service.get("volumes")
 
-    input_path = find_enviroment_variable(environment, "INPUT_PATH")
-    if not input_path:
-        raise ScenarioError(f"{name}: falta la variable de entorno INPUT_PATH")
+    input_file = find_enviroment_variable(environment, "INPUT_FILE")
+    if not input_file:
+        raise ScenarioError(f"{name}: falta la variable de entorno INPUT_FILE")
 
-    output_path = find_enviroment_variable(environment, "OUTPUT_PATH")
-    if not output_path:
-        raise ScenarioError(f"{name}: falta la variable de entorno OUTPUT_PATH")
+    output_dir = find_enviroment_variable(environment, "OUTPUT_DIR")
+    if not output_dir:
+        raise ScenarioError(f"{name}: falta la variable de entorno OUTPUT_DIR")
 
     return ClientConfig(
         name=name,
-        input_path=container_path_to_host(input_path,volumes, compose_dir),
-        output_path=container_path_to_host(output_path,volumes, compose_dir),
+        input_file=container_path_to_host(input_file,volumes, compose_dir),
+        output_dir=container_path_to_host(output_dir,volumes, compose_dir),
         queries=parse_queries(find_enviroment_variable(environment, "EXPECTED_QUERIES"))
     )
 
@@ -192,15 +206,19 @@ def read_clients(compose_path):
 
 # SE CALCULO LO ESPERADO, SE LO LEE Y SE COMPARA ----
 
-def expected_q1(input_path):
+def expected_q1(input_file):
     """ Lo que deberia devolver la Q1 para este parquet"""
-    pass
+    expected = Counter()
+    articles = results_q1.read_records(input_file) #lee de parquet y devuelve de a un articulo 
+    for row in results_q1.q1_rows(articles):
+        expected[row] += 1
+    return expected
 
 RESULTS = {
     1: expected_q1,
 
 }
-
+@dataclass
 class QueryResults:
     query: int
     status: str #OK, SKIP , FAIL
@@ -219,20 +237,20 @@ def validate_client_results_in_query(client,query):
         return QueryResults(query=query, status="SKIP", message=f"Query {query} no tiene resultados esperados definidos aun")
 
     try:
-        expected_results = results_query(client.input_path)
+        expected_results = results_query(client.input_file)
 
-    except FileNotFoundError as e:
-        raise ScenarioError(f"{client.name}: no se pudo leer el archivo de entrada: {e.filename}")
+    except FileNotFoundError :
+        raise ScenarioError(f"{client.name}: no se pudo leer el archivo de entrada")
 
-    except ImportError as e:
+    except ImportError:
         raise ScenarioError(f"{client.name}: falta pyarrow para leer parquet.\nInstalarlo con: pip install pyarrow") #TODO: ver si se puede solucionar esto
 
-    output_path = os.path.join(client.output_path, f"result_Q{query}.csv")
+    output_dir = os.path.join(client.output_dir, f"result_Q{query}.csv")
 
-    if not os.path.isfile(output_path):
-        return QueryResults(query=query, status="FAIL",n_expected=sum(expected_results.values()) ,message=f"{client.name}: no se encontro el archivo de salida {output_path}")
+    if not os.path.isfile(output_dir):
+        return QueryResults(query=query, status="FAIL",rows_expected=sum(expected_results.values()) ,message=f"{client.name}: no se encontro el archivo de salida {output_dir}")
 
-    results_got = compare.read_rows(output_path)
+    results_got = compare.read_rows(output_dir)
     ok, datails = compare.COMPARATORS[query](results_got, expected_results)
 
     comparation_result = "OK" if ok else "FAIL"
@@ -243,14 +261,14 @@ def validate_client_results_in_query(client,query):
 
 def print_query_result(r: QueryResults):
     if r.status == "OK":
-        print(f"  q{r.query}: OK ({r.n_got} rows, {r.n_expected} expected)")
+        print(f"  q{r.query}: OK ({r.rows_got} rows, {r.rows_expected} expected)")
     elif r.status == "SKIP":
         print(f"  q{r.query}: SKIP ({r.message})")
     elif r.details is None:
         print(f"  q{r.query}: FAIL ({r.message})")
     else:
         d = r.details
-        print(f"  q{r.query}: FAIL ({r.n_got} rows, {r.n_expected} expected)")
+        print(f"  q{r.query}: FAIL ({r.rows_got} rows, {r.rows_expected} expected)")
         print(f"    {sum(d['missing'].values())} faltantes, "
               f"{sum(d['unexpected'].values())} inesperadas, "
               f"{sum(d['duplicated'].values())} duplicadas")
@@ -281,6 +299,76 @@ def validate_client_results(clients):
         print("RESULT: OK")
     return all_ok
 
+# PARA LA CORRIDA DE RUN (todo el escenario )----
+
+def run_docker(command, error_message=None):
+    """
+    Corre un comando de docker mostrando lo que devuelve por pantalla.4
+    Si error_menssage ses None se ignora si falla, sino el se lanza un ScenarioError con ese mensaje
+    """
+
+    try:
+        result = subprocess.run(command)
+    except FileNotFoundError:
+        raise ScenarioError("No se encontro el comando 'docker'")
+    if error_message is not None and result.returncode != 0:
+        raise ScenarioError(error_message)
+
+def clenup_output_dir(output_dir):
+    """
+    Deja vacia la carpeta de salida del cliente (output_dir).
+    Esto pq los clientes escriben en modo append y sino se van a ir acumulando los resultados de las distintas corridas.
+    """
+    if os.path.isdir("output_dir"):
+        try:
+            shutil.rmtree(output_dir)
+        except PermissionError:
+            # Como los archivos se crean desde el contenedor se borran desde otr
+            parent , name = os.path.split(os.path.abspath(output_dir))
+            run_docker(["docker", "run", "--rm", "-v", f"{parent}:/w", "alpine", "sh", "-c", f"rm -rf /w/{name}"], f"No se pudo limpiar {output_dir}.\n BORRAR DE MANERA MANUAL!!!")
+    
+    os.makedirs(output_dir, exist_ok=True)
+
+
+def run_scenario(compose_path, timeout=TIMEOUT_DEFAULT):
+    """
+    Corre el escnario completo y devuelve trye si los resultados son correctos.
+    """
+
+    clients = read_clients(compose_path)
+    names = []
+    for client in clients:
+        names.append(client.name)
+
+    compose = ["docker","compose", "-f", compose_path]
+
+    print(">>Limpiando las carpetas de salida...")
+    for client in clients:
+        clenup_output_dir(client.output_dir)
+
+    print(">>Bajando restos de corridas anteriores...")
+    run_docker([*compose, "down", "-v", "--remove-orphans"])
+
+    try:
+        print(f">>Levantando {compose_path}...")
+        run_docker([*compose, "up", "-d"], f"No se pudo levantar {compose_path}")
+
+        print(f">> Esperando a: {', '.join(names)} (timeout {timeout}s)")
+        try:
+            await_client_containers(names, timeout)
+        except ScenarioError as e:
+            print(f"Los clientes no terminaron correctamente!!\nERROR:{e}\nUltimos logs:")
+            run_docker([*compose, "logs", "--tail=20", *names,"gateway"])
+            raise
+
+        print(">>Validando resultados...")
+        return validate_client_results(clients)
+
+    finally:
+        #Pase lo que pase no se deja a ningun conetenedor levantado
+        print(">>Bajando contenedores...")
+        run_docker([*compose, "down", "-v", "--remove-orphans"])
+        
 
 def main():
     parser = argparse.ArgumentParser(description="Valida los resultados contra los resultados esperados")
@@ -291,20 +379,26 @@ def main():
 
     parser.add_argument("--info", action="store_true", help="solo muestra que clientes hay y sus rutas (no valida)")
 
+    parser.add_argument("--run", action="store_true", help="corre todo: limpia output, levanta el compose, espera, valida y baja todo")
 
     parser.add_argument("--timeout", type=int, default=TIMEOUT_DEFAULT)
     
     args = parser.parse_args()
  
     try:
+        if args.run:
+            return 0 if run_scenario(args.compose, args.timeout) else 1
+        
         clients = read_clients(args.compose)
         if args.info:
             for c in clients:
-                print(f"{c.name}\n  input:   {c.input_path}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
+                print(f"{c.name}\n  input:   {c.input_file}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
             return 0
+        
         if args.wait:
             await_client_containers([c.name for c in clients], args.timeout)
         return 0 if validate_client_results(clients) else 1
+    
     except ScenarioError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2

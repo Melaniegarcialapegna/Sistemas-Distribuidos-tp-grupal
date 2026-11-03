@@ -6,6 +6,9 @@ import subprocess
 import sys
 import yaml 
 import os
+import compare #TODO
+import results_q1
+import argparse
 
 TIMEOUT_DEFAULT = 1000 #segundos xd
 ALL_QUERIES = (1,2,3,4,5)
@@ -176,16 +179,124 @@ def read_clients(compose_path):
     compose_dir = os.path.dirname(os.path.abspath(compose_path))
     return [read_client_config(name, services[name], compose_dir) for name in client_names]
 
+# SE CALCULO LO ESPERADO, SE LO LEE Y SE COMPARA ----
+
+def expected_q1(input_path):
+    """ Lo que deberia devolver la Q1 para este parquet"""
+    pass
+
+RESULTS = {
+    1: expected_q1,
+
+}
+
+class QueryResults:
+    query: int
+    status: str #OK, SKIP , FAIL
+    rows_got : int=0 # filas que devolvio el cliente
+    rows_expected : int=0 #filas que deberia haber devuelto
+    message : str = "" #mensaje de error o advertencia
+    details: dict = None #para fail 
+
+def validate_client_results_in_query(client,query):
+    """
+    Valida los resultados de UNA QUERY para UN CLIENTE
+    """
+    results_query = RESULTS.get(query)
+
+    if results_query is None:
+        return QueryResults(query=query, status="SKIP", message=f"Query {query} no tiene resultados esperados definidos aun")
+
+    try:
+        expected_results = results_query(client.input_path)
+
+    except FileNotFoundError as e:
+        raise ScenarioError(f"{client.name}: no se pudo leer el archivo de entrada: {e.filename}")
+
+    except ImportError as e:
+        raise ScenarioError(f"{client.name}: falta pyarrow para leer parquet.\nInstalarlo con: pip install pyarrow") #TODO: ver si se puede solucionar esto
+
+    output_path = os.path.join(client.output_path, f"result_Q{query}.csv")
+
+    if not os.path.isfile(output_path):
+        return QueryResults(query=query, status="FAIL",n_expected=sum(expected_results.values()) ,message=f"{client.name}: no se encontro el archivo de salida {output_path}")
+
+    results_got = compare.read_rows(output_path)
+    ok, datails = compare.COMPARATORS[query](results_got, expected_results)
+
+    comparation_result = "OK" if ok else "FAIL"
+    comparation_details = None if ok else datails
+
+    return QueryResults(query=query, status=comparation_result, rows_got=sum(results_got.values()), rows_expected=sum(expected_results.values()), message=f"{client.name}: {query} {'OK' if ok else 'FAIL'}", details=comparation_details)
+
+
+def print_query_result(r: QueryResults):
+    if r.status == "OK":
+        print(f"  q{r.query}: OK ({r.n_got} rows, {r.n_expected} expected)")
+    elif r.status == "SKIP":
+        print(f"  q{r.query}: SKIP ({r.message})")
+    elif r.details is None:
+        print(f"  q{r.query}: FAIL ({r.message})")
+    else:
+        d = r.details
+        print(f"  q{r.query}: FAIL ({r.n_got} rows, {r.n_expected} expected)")
+        print(f"    {sum(d['missing'].values())} faltantes, "
+              f"{sum(d['unexpected'].values())} inesperadas, "
+              f"{sum(d['duplicated'].values())} duplicadas")
+        compare.show("    falta:      ", d["missing"])
+        compare.show("    inesperada: ", d["unexpected"])
+        compare.show("    duplicada:  ", d["duplicated"])
+
+def validate_client_results(clients):
+    """
+    Valida todos los clientes e imprime un resumen de los resultados
+    Devuelve true si no hubo ningun FAIL
+    """
+    all_ok, skipped = True, 0
+    for client in clients:
+        print(client.name)
+        for query in client.queries:
+            result = validate_client_results_in_query(client, query)
+            print_query_result(result)
+            if result.status == "FAIL":
+                all_ok = False
+            if result.status == "SKIP":
+                skipped = skipped+ 1
+    if not all_ok:
+        print("RESULT: FAILED")
+    elif skipped:
+        print(f"RESULT: OK ({skipped} query(s) sin validar: NO TIENEN RESULTADOS ESPERADOS todavia)")
+    else:
+        print("RESULT: OK")
+    return all_ok
+
 
 def main():
-    client_names = sys.argv[1:]
+    parser = argparse.ArgumentParser(description="Valida los resultados contra los resultados esperados")
+
+    parser.add_argument("compose", help="ruta al docker-compose.yaml con el que se hizo la corrida")
+
+    parser.add_argument("--wait", action="store_true", help="antes de validar espera a que terminen los clientes")
+
+    parser.add_argument("--info", action="store_true", help="solo muestra que clientes hay y sus rutas (no valida)")
+
+
+    parser.add_argument("--timeout", type=int, default=TIMEOUT_DEFAULT)
+    
+    args = parser.parse_args()
+ 
     try:
-        await_client_containers(client_names)
+        clients = read_clients(args.compose)
+        if args.info:
+            for c in clients:
+                print(f"{c.name}\n  input:   {c.input_path}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
+            return 0
+        if args.wait:
+            await_client_containers([c.name for c in clients], args.timeout)
+        return 0 if validate_client_results(clients) else 1
     except ScenarioError as e:
         print(f"ERROR: {e}", file=sys.stderr)
-        return 1
-    print(f"Todos los clientes terminaron correctamente: {', '.join(client_names)}")
-    return 0
+        return 2
 
 if __name__ == "__main__":
     sys.exit(main())

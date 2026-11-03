@@ -12,9 +12,9 @@ from common import message_protocol
 INPUT_FILE = os.environ["INPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/output")
+ROW_BATCH_SIZE = int(os.environ.get("ROW_BATCH_SIZE", 1000))
 
-
-ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2, message_protocol.external.Query.Q3, message_protocol.external.Query.Q4,message_protocol.external.Query.Q5} # add to config
 
@@ -115,10 +115,8 @@ class Client:
         return record
 
     def _save_rows(self, query_id, rows):
-
-        output_dir = os.environ.get("OUTPUT_DIR", "output")
-        os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.join(output_dir, f"result_Q{query_id}.csv")
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        filename = os.path.join(OUTPUT_DIR, f"result_Q{query_id}.csv")
 
         with open(filename, "a", newline="") as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')

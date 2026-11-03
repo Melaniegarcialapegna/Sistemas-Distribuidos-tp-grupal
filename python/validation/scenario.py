@@ -1,6 +1,17 @@
 """
 Corre un escenario de prueba para las queries.
 
+
+Main tiene tres modos de ejecucion:
+- python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas)
+- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes y valida
+- python3 validation/scenario.py docker-compose.yaml --info -> solo muestra que clientes hay y sus rutas (no valida)
+
+Los exit codes son:
+0: todo OK
+1: hubo algun FAIL en los resultados de los clientes
+2: hubo un error en la ejecucion del escenario (ej: no se encontro el docker-compose.yaml, algun cliente termino con error, input no existe, etc..)
+
 """
 import subprocess
 import sys

@@ -8,13 +8,23 @@ from input_stream.input_stream import InputStream
 from common import middleware
 from recent_store.recent_store import RecentStore
 
-REPLICA_ID = os.environ["REPLICA_ID"]
-AVERAGE_KEY_PREFIX="average_exchange"
+HOST = os.environ.get("RABBITMQ_HOST")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
+RECENT_QUEUE_NAME = os.environ.get("RECENT_QUEUE_NAME")
+AVERAGE_EXCHANGE = os.environ.get("AVERAGE_EXCHANGE")
+RESULTS_QUEUE_NAME = os.environ.get("RESULTS_QUEUE_NAME")
+TOKENIZER_REPLICAS = int(os.environ.get("TOKENIZER_REPLICAS", "1"))
+SUM_JOIN_AMOUNT = int(os.environ.get("SUM_JOIN_AMOUNT", 1))
+STORE_PATH = os.environ.get("STORE_PATH")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+AVERAGE_KEY_PREFIX = "average_exchange"
 
 class AverageFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host,exchange_control, recent_queue, average_exchange,
-                 results_queue, tokenizer_replicas, sum_join_amount,store_path):
-        super().__init__(batch_size,host)
+    def __init__(self, batch_size, host, exchange_control, recent_queue, average_exchange,
+                 results_queue, tokenizer_replicas, sum_join_amount, store_path,
+                 replica_id):
+        super().__init__(batch_size, host)
         self.result_query_id = Query.Q5
         self.clients_average = {} #{client_id : average}
         self.barriers = {} 
@@ -28,20 +38,29 @@ class AverageFilterWorker(BaseWorker):
         self.control_routing_key = ""
 
         # Create a InputStream for each input
-        queue_coordinator = QueueEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=tokenizer_replicas, on_barrier=self._on_recent_barrier, publish_control=self._publish_control_message)
+        queue_coordinator = QueueEofCoordinator(
+            replica_id=replica_id,
+            previous_stage_replicas=tokenizer_replicas,
+            on_barrier=self._on_recent_barrier,
+            publish_control=self._publish_control_message
+        )
 
-        self.recent = InputStream("recent",queue_coordinator, self._on_recent_data)
+        self.recent = InputStream("recent", queue_coordinator, self._on_recent_data)
 
-        exchange_coordinator= ExchangeEofCoordinator(replica_id=REPLICA_ID, previous_stage_replicas=sum_join_amount, on_barrier=self._on_total_barrier)
+        exchange_coordinator = ExchangeEofCoordinator(
+            replica_id=replica_id,
+            previous_stage_replicas=sum_join_amount,
+            on_barrier=self._on_total_barrier
+        )
 
-        self.totals = InputStream("totals",exchange_coordinator, self._on_total_data)
+        self.totals = InputStream("totals", exchange_coordinator, self._on_total_data)
 
         self.input_handler = middleware.RabbitMQHandler(host)
         self.input_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
 
-        self.input_handler.subscribe_to_exchange(exchange_control,[self.control_routing_key], self.recent.handle_message)
+        self.input_handler.subscribe_to_exchange(exchange_control, [self.control_routing_key], self.recent.handle_message)
 
-        self.input_handler.subscribe_to_exchange(average_exchange,[f"{AVERAGE_KEY_PREFIX}_{REPLICA_ID}"], self.totals.handle_message)
+        self.input_handler.subscribe_to_exchange(average_exchange, [f"{AVERAGE_KEY_PREFIX}_{replica_id}"], self.totals.handle_message)
 
     def process_data(self, client_id, payload):
         #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 
@@ -97,18 +116,11 @@ class AverageFilterWorker(BaseWorker):
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    host = os.environ["RABBITMQ_HOST"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    exchange_control = os.environ["CONTROL_EXCHANGE_NAME"]
-    recent_queue = os.environ["RECENT_QUEUE_NAME"]
-    average_exchange = os.environ["AVERAGE_EXCHANGE"]
-    results_queue = os.environ["RESULTS_QUEUE_NAME"]
-    tokenizer_replicas = int(os.environ.get("TOKENIZER_REPLICAS", "1"))
-    sum_join_amount = int(os.environ["SUM_JOIN_AMOUNT"])
-    store_path = os.environ.get("STORE_PATH")
- 
-    worker = AverageFilterWorker(batch_size, host, exchange_control, recent_queue, average_exchange,
-                                 results_queue, tokenizer_replicas, sum_join_amount, store_path)
+    worker = AverageFilterWorker(
+        BATCH_SIZE, HOST, CONTROL_EXCHANGE_NAME, RECENT_QUEUE_NAME,
+        AVERAGE_EXCHANGE, RESULTS_QUEUE_NAME, TOKENIZER_REPLICAS,
+        SUM_JOIN_AMOUNT, STORE_PATH, REPLICA_ID
+    )
 
     worker.start()
     return 0

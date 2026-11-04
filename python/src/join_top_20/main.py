@@ -5,19 +5,25 @@ from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinat
 from common.message_protocol.external import Query
 from common.word_item import WordItem
 
+HOST = os.environ.get("RABBITMQ_HOST")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+INPUT_EXCHANGE_NAME = os.environ.get("INPUT_EXCHANGE_NAME")
+INPUT_EXCHANGE_PREFIX = os.environ.get("INPUT_EXCHANGE_PREFIX")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+RESULTS_QUEUE_NAME = os.environ.get("RESULTS_QUEUE_NAME")
+TOP_SIZE = int(os.environ.get("TOP_SIZE", 20))
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
+
 class JoinTop20Worker(BaseWorker):
-    def __init__(self, batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_size=20):
+    def __init__(self, batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_size, previous_stage_replicas):
         super().__init__(batch_size, host)
         self._create_output_queue(results_queue_name)
         self.results_queue_name = results_queue_name
         self.eof_coordinator = ExchangeEofCoordinator(
             replica_id=replica_id,
-            previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._on_barrier
         )
-        self.input_exchange_name = input_exchange_name
-        self.input_exchange_prefix = input_exchange_prefix
-        self.replica_id = replica_id
         routing_keys = [f"{input_exchange_prefix}_{replica_id}"]
         self._create_exchange_input_handler(input_exchange_name, routing_keys)
         self.top_size = top_size
@@ -56,16 +62,12 @@ class JoinTop20Worker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    host = os.environ["RABBITMQ_HOST"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    input_exchange_name = os.environ["INPUT_EXCHANGE_NAME"]
-    input_exchange_prefix = os.environ["INPUT_EXCHANGE_PREFIX"]
-    replica_id = os.environ["REPLICA_ID"]
-    top_size = int(os.environ.get("TOP_SIZE", 20))
-    results_queue_name = os.environ["RESULTS_QUEUE_NAME"]
 
-    word_counter_worker = JoinTop20Worker(batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_size)
-    word_counter_worker.start()
+    join_top_20_worker = JoinTop20Worker(
+        BATCH_SIZE, HOST, INPUT_EXCHANGE_NAME, INPUT_EXCHANGE_PREFIX,
+        REPLICA_ID, RESULTS_QUEUE_NAME, TOP_SIZE, PREVIOUS_STAGE_REPLICAS
+    )
+    join_top_20_worker.start()
     return 0
 
 if __name__ == "__main__":

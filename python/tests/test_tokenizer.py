@@ -66,6 +66,8 @@ class TestTokenizerWorker(unittest.TestCase):
             repeated_filter_output_queue="repeated_queue",
             q5_sum_queue="q5_sum_queue",
             q5_average_filter_queue="q5_recent_queue",
+            replica_id="test_replica",
+            previous_stage_replicas=1,
         )
 
     def test_init_configures_queues_and_handlers(self):

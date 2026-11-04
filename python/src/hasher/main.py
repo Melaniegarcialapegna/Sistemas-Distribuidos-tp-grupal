@@ -5,24 +5,33 @@ from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 from common.utils import fnv1a_32
 
 
+HOST = os.environ.get("RABBITMQ_HOST")
+INPUT_QUEUE_NAME = os.environ.get("INPUT_QUEUE_NAME")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
+CONTROL_ROUTING_KEY = os.environ.get("CONTROL_ROUTING_KEY", "")
+OUTPUT_EXCHANGE_NAME = os.environ.get("OUTPUT_EXCHANGE_NAME")
+OUTPUT_ROUTING_KEY_PREFIX = os.environ.get("OUTPUT_ROUTING_KEY_PREFIX")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
+NEXT_STAGE_REPLICAS = int(os.environ.get("NEXT_STAGE_REPLICAS", "1"))
+
 class HasherWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_exchange_name, output_routing_key_prefix):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_exchange_name, output_routing_key_prefix, replica_id, previous_stage_replicas, next_stage_replicas):
         super().__init__(batch_size, host)
-        self.next_stage_replicas = int(os.environ.get("NEXT_STAGE_REPLICAS", "1"))
+        self.next_stage_replicas = next_stage_replicas
         output_routing_keys = []
         for i in range(self.next_stage_replicas):
             output_routing_keys.append(f"{output_routing_key_prefix}_{i}")
         self._create_output_exchange(output_exchange_name, output_routing_keys)
         self.output_exchange_name = output_exchange_name
         self.output_routing_key_prefix = output_routing_key_prefix
-        self.previous_stage_replicas = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
         self.eof_coordinator = QueueEofCoordinator(
-            replica_id=os.environ.get("REPLICA_ID", "default_replica"),
-            previous_stage_replicas=self.previous_stage_replicas,
+            replica_id=replica_id,
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._flush_all,
             publish_control=self._publish_control_message
         )
-        self.input_queue_name = input_queue_name
         self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
 
 
@@ -37,15 +46,12 @@ class HasherWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    host = os.environ["RABBITMQ_HOST"]
-    input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
-    control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
-    output_exchange_name = os.environ["OUTPUT_EXCHANGE_NAME"]
-    output_routing_key_prefix = os.environ["OUTPUT_ROUTING_KEY_PREFIX"]
 
-    hasher_worker = HasherWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, output_exchange_name, output_routing_key_prefix)
+    hasher_worker = HasherWorker(
+        BATCH_SIZE, HOST, INPUT_QUEUE_NAME, CONTROL_ROUTING_KEY,
+        CONTROL_EXCHANGE_NAME, OUTPUT_EXCHANGE_NAME, OUTPUT_ROUTING_KEY_PREFIX,
+        REPLICA_ID, PREVIOUS_STAGE_REPLICAS, NEXT_STAGE_REPLICAS
+    )
     hasher_worker.start()
     return 0
 

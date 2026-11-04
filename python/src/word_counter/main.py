@@ -7,10 +7,22 @@ from common.word_item import WordItem
 from common.utils import fnv1a_32
 
 
+HOST = os.environ.get("RABBITMQ_HOST")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+INPUT_EXCHANGE_NAME = os.environ.get("INPUT_EXCHANGE_NAME")
+INPUT_EXCHANGE_PREFIX = os.environ.get("INPUT_EXCHANGE_PREFIX")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+RESULTS_QUEUE_NAME = os.environ.get("RESULTS_QUEUE_NAME")
+TOP_EXCHANGE_NAME = os.environ.get("TOP_EXCHANGE_NAME")
+TOP_EXCHANGE_RK_PREFIX = os.environ.get("TOP_EXCHANGE_RK_PREFIX")
+TOP_SIZE = int(os.environ.get("TOP_SIZE", 20))
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
+NEXT_STAGE_REPLICAS = int(os.environ.get("NEXT_STAGE_REPLICAS", "1"))
+
 class WordCounterWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_exchange_name, top_exchange_rk_prefix, top_size=20):
+    def __init__(self, batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_exchange_name, top_exchange_rk_prefix, top_size, previous_stage_replicas, next_stage_replicas):
         super().__init__(batch_size, host)
-        self.next_stage_replicas = int(os.environ.get("NEXT_STAGE_REPLICAS", "1"))
+        self.next_stage_replicas = next_stage_replicas
         top_routing_keys = [f"{top_exchange_rk_prefix}_{i}" for i in range(self.next_stage_replicas)]
         self._create_output_queue(results_queue_name)
         self._create_output_exchange(top_exchange_name, top_routing_keys)
@@ -20,12 +32,9 @@ class WordCounterWorker(BaseWorker):
         self.top_size = top_size
         self.eof_coordinator = ExchangeEofCoordinator(
             replica_id=replica_id,
-            previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._on_barrier
         )
-        self.input_exchange_name = input_exchange_name
-        self.input_exchange_prefix = input_exchange_prefix
-        self.replica_id = replica_id
         routing_keys = [f"{input_exchange_prefix}_{replica_id}"]
         self._create_exchange_input_handler(input_exchange_name, routing_keys)
         self.result_query_id = Query.Q3
@@ -57,17 +66,12 @@ class WordCounterWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    host = os.environ["RABBITMQ_HOST"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    input_exchange_name = os.environ["INPUT_EXCHANGE_NAME"]
-    input_exchange_prefix = os.environ["INPUT_EXCHANGE_PREFIX"]
-    replica_id = os.environ["REPLICA_ID"]
-    results_queue_name = os.environ["RESULTS_QUEUE_NAME"]
-    top_exchange_name = os.environ["TOP_EXCHANGE_NAME"]
-    top_exchange_rk_prefix = os.environ["TOP_EXCHANGE_RK_PREFIX"]
-    top_size = int(os.environ.get("TOP_SIZE", 20))
 
-    word_counter_worker = WordCounterWorker(batch_size, host, input_exchange_name, input_exchange_prefix, replica_id, results_queue_name, top_exchange_name, top_exchange_rk_prefix, top_size)
+    word_counter_worker = WordCounterWorker(
+        BATCH_SIZE, HOST, INPUT_EXCHANGE_NAME, INPUT_EXCHANGE_PREFIX,
+        REPLICA_ID, RESULTS_QUEUE_NAME, TOP_EXCHANGE_NAME,
+        TOP_EXCHANGE_RK_PREFIX, TOP_SIZE, PREVIOUS_STAGE_REPLICAS, NEXT_STAGE_REPLICAS
+    )
     word_counter_worker.start()
     return 0
 

@@ -3,19 +3,26 @@ import os
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 
+HOST = os.environ.get("RABBITMQ_HOST")
+INPUT_QUEUE_NAME = os.environ.get("INPUT_QUEUE_NAME")
+Q3_4_OUTPUT_QUEUE_NAME = os.environ.get("Q3_4_OUTPUT_QUEUE_NAME")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 100))
+CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
+CONTROL_ROUTING_KEY = os.environ.get("CONTROL_ROUTING_KEY", "")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
+
 class UniqueWordsFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q3_4_output_queue_name):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q3_4_output_queue_name, replica_id, previous_stage_replicas):
         super().__init__(batch_size, host)
         self._create_output_queue(q3_4_output_queue_name)
         self.q3_4_output_queue_name = q3_4_output_queue_name
-        self.previous_stage_replicas = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
         self.eof_coordinator = QueueEofCoordinator(
-            replica_id=os.environ.get("REPLICA_ID", "default_replica"),
-            previous_stage_replicas=self.previous_stage_replicas,
+            replica_id=replica_id,
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._flush_all,
             publish_control=self._publish_control_message
         )
-        self.input_queue_name = input_queue_name
         self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
 
     def process_data(self, client_id, message):
@@ -29,16 +36,10 @@ class UniqueWordsFilterWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    host = os.environ["RABBITMQ_HOST"]
-    input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    q3_4_output_queue_name = os.environ["Q3_4_OUTPUT_QUEUE_NAME"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 100))
-    control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
-    control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
     unique_words_filter_worker = UniqueWordsFilterWorker(
-        batch_size, host, input_queue_name, control_routing_key,
-        control_exchange_name, q3_4_output_queue_name
+        BATCH_SIZE, HOST, INPUT_QUEUE_NAME, CONTROL_ROUTING_KEY,
+        CONTROL_EXCHANGE_NAME, Q3_4_OUTPUT_QUEUE_NAME, REPLICA_ID, PREVIOUS_STAGE_REPLICAS
     )
     unique_words_filter_worker.start()
     return 0

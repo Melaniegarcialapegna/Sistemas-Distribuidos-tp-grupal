@@ -140,10 +140,35 @@ class Client:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         filename = os.path.join(OUTPUT_DIR, f"result_Q{query_id}.csv")
 
-        with open(filename, "a", newline="") as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
-            for row in rows:
-                csv_writer.writerow(row)
+        if query_id == message_protocol.external.Query.Q2:
+            images_dir = os.path.join(OUTPUT_DIR, "images")
+            os.makedirs(images_dir, exist_ok=True)
+
+            with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+                csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                for row in rows:
+                    name = row[0]
+                    url = row[1] if len(row) > 1 else ""
+                    img_bytes = row[2] if len(row) > 2 else None
+
+                    # Solo se guarda en disco si efectivamente se recibieron bytes de imagen
+                    if img_bytes and isinstance(img_bytes, (bytes, bytearray)):
+                        # Sanitizar el nombre para evitar caracteres inválidos como '/' en títulos
+                        safe_name = "".join(c if c.isalnum() or c in " ._-" else "_" for c in name)
+                        img_path = os.path.join(images_dir, f"{safe_name}.png")
+                        try:
+                            with open(img_path, "wb") as imgfile:
+                                imgfile.write(img_bytes)
+                        except OSError as e:
+                            logging.error(f"Error guardando imagen {img_path}: {e}")
+
+                    # En el CSV de Q2 se escribe [name, url]
+                    csv_writer.writerow([name, url])
+        else:
+            with open(filename, "a", newline="", encoding="utf-8") as csvfile:
+                csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
+                for row in rows:
+                    csv_writer.writerow(row)
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)

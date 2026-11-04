@@ -16,8 +16,10 @@ logs:
 	docker compose -f docker-compose.yaml logs
 .PHONY: logs
 
+PERCENTAGE ?= 10
+
 download:
-	docker compose -f docker-compose.yaml run --rm downloader
+	docker compose -f docker-compose-download.yaml run --rm -e DOWNLOAD_PERCENTAGE=$(PERCENTAGE) downloader
 .PHONY: download
 
 test:

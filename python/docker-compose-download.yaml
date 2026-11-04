@@ -1,0 +1,12 @@
+services:
+  downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile.download
+    environment:
+      KAGGLE_USERNAME: martinariccardi
+      KAGGLE_KEY: KGAT_c05bedad0568e90eb5ffa61b5ec7b305
+      DOWNLOAD_PERCENTAGE: ${DOWNLOAD_PERCENTAGE:-10}
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./datasets:/datasets

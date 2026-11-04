@@ -30,6 +30,7 @@ import subprocess
 import sys
 import yaml 
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare 
 import argparse
 
@@ -85,6 +86,7 @@ class ClientConfig:
     Tiene la info que se necesita del cliente para poder validar sus resultados 
     """
     name : str 
+    container_name: str
     input_file: str #la carpeta que se le da al cliente como input
     output_dir: str #carpeta en donde cliente escribe los resultados
     queries: tuple #queries que se espera que haya respondido
@@ -169,28 +171,30 @@ def parse_queries(value):
         return tuple(queries)
     
     except ValueError:
-        raise ScenarioError(f"EXPECTED_QUERIES invalido: {value}.\nDebe ser una lista de numeros separados por coma, ej: 1,2,3,4,5")
+        raise ScenarioError(f"QUERIES invalido: {value}.\nDebe ser una lista de numeros separados por coma, ej: 1,2,3,4,5")
 
 def read_client_config(name, service, compose_dir):
     """
-    Arma el ClientConfig de un cliente a partir de su ccion en el compose.
+    Arma el ClientConfig de un cliente a partir de su seccion en el compose.
     """ 
     environment = service.get("environment")
     volumes = service.get("volumes")
+    container_name = service.get("container_name", name)
 
     input_file = find_enviroment_variable(environment, "INPUT_FILE")
     if not input_file:
         raise ScenarioError(f"{name}: falta la variable de entorno INPUT_FILE")
 
-    output_dir = find_enviroment_variable(environment, "OUTPUT_DIR")
-    if not output_dir:
-        raise ScenarioError(f"{name}: falta la variable de entorno OUTPUT_DIR")
+    output_dir = find_enviroment_variable(environment, "OUTPUT_DIR") or "/output"
+
+    queries_val = find_enviroment_variable(environment, "QUERIES") or find_enviroment_variable(environment, "EXPECTED_QUERIES")
 
     return ClientConfig(
         name=name,
-        input_file=container_path_to_host(input_file,volumes, compose_dir),
-        output_dir=container_path_to_host(output_dir,volumes, compose_dir),
-        queries=parse_queries(find_enviroment_variable(environment, "EXPECTED_QUERIES"))
+        container_name=container_name,
+        input_file=container_path_to_host(input_file, volumes, compose_dir),
+        output_dir=container_path_to_host(output_dir, volumes, compose_dir),
+        queries=parse_queries(queries_val)
     )
 
 def read_clients(compose_path):
@@ -228,18 +232,18 @@ def validate_client_results_in_query(client,query,expected_dir):
         raise ScenarioError(
             f"{client.name}: falta el archivo esperado {expected_path}.\n"
             f"Generarlo con: python3 validation/results_q{query}.py {expected_dir} {client.input_file}")
-    expected_results = compare.read_rows(expected_path)
+    expected_results = compare.read_rows(expected_path, query=query)
 
     output_path = os.path.join(client.output_dir, f"result_Q{query}.csv")
  
     if not os.path.isfile(output_path):
         return QueryResults(query=query, status="FAIL", rows_expected=sum(expected_results.values()), message=f"{client.name}: no se encontro el archivo de salida {output_path}")
     
-    results_got = compare.read_rows(output_path)
-    ok, datails = compare.COMPARATORS[query](results_got, expected_results)
+    results_got = compare.read_rows(output_path, query=query)
+    ok, details = compare.COMPARATORS[query](results_got, expected_results)
 
     comparation_result = "OK" if ok else "FAIL"
-    comparation_details = None if ok else datails
+    comparation_details = None if ok else details
 
     return QueryResults(query=query, status=comparation_result, rows_got=sum(results_got.values()), rows_expected=sum(expected_results.values()), message=f"{client.name}: {query} {'OK' if ok else 'FAIL'}", details=comparation_details)
 
@@ -322,9 +326,7 @@ def run_scenario(compose_path, expected_dir, timeout=TIMEOUT_DEFAULT):
     """
 
     clients = read_clients(compose_path)
-    names = []
-    for client in clients:
-        names.append(client.name)
+    container_names = [client.container_name for client in clients]
 
     compose = ["docker","compose", "-f", compose_path]
 
@@ -339,12 +341,12 @@ def run_scenario(compose_path, expected_dir, timeout=TIMEOUT_DEFAULT):
         print(f">>Levantando {compose_path}...")
         run_docker([*compose, "up", "-d"], f"No se pudo levantar {compose_path}")
 
-        print(f">> Esperando a: {', '.join(names)} (timeout {timeout}s)")
+        print(f">> Esperando a: {', '.join(container_names)} (timeout {timeout}s)")
         try:
-            await_client_containers(names, timeout)
+            await_client_containers(container_names, timeout)
         except ScenarioError as e:
             print(f"Los clientes no terminaron correctamente!!\nERROR:{e}\nUltimos logs:")
-            run_docker([*compose, "logs", "--tail=20", *names,"gateway"])
+            run_docker([*compose, "logs", "--tail=20", *container_names,"gateway"])
             raise
 
         print(">>Validando resultados...")
@@ -355,6 +357,15 @@ def run_scenario(compose_path, expected_dir, timeout=TIMEOUT_DEFAULT):
         print(">>Bajando contenedores...")
         run_docker([*compose, "down", "-v", "--remove-orphans"])
         
+
+def resolve_expected_dir(expected_dir, compose_path):
+    compose_dir = os.path.dirname(os.path.abspath(compose_path))
+    candidate = os.path.join(compose_dir, expected_dir)
+    if os.path.isdir(candidate):
+        return candidate
+    if os.path.isdir(expected_dir):
+        return expected_dir
+    return expected_dir
 
 def main():
     parser = argparse.ArgumentParser(description="Valida los resultados contra los resultados esperados")
@@ -370,6 +381,7 @@ def main():
     parser.add_argument("--expected", default=EXPECTED_DIR_DEFAULT, help="carpeta con los resultados esperados (por defecto: expected)")
     
     args = parser.parse_args()
+    args.expected = resolve_expected_dir(args.expected, args.compose)
  
     try:
         if args.run:
@@ -378,9 +390,12 @@ def main():
         clients = read_clients(args.compose)
         if args.info:
             for c in clients:
-                print(f"{c.name}\n  input:   {c.input_file}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
+                print(f"{c.name} (container: {c.container_name})\n  input:   {c.input_file}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
                 print(f"  esperado Q1: {compare.expected_file(args.expected, c.input_file, 1)}")
             return 0
+
+        # Modo por defecto (sin --run ni --info): validar resultados ya generados
+        return 0 if validate_client_results(clients, args.expected) else 1
  
     except ScenarioError as e:
         print(f"ERROR: {e}", file=sys.stderr)

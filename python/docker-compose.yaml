@@ -5,19 +5,31 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    -  tokenizer_0
-    -  sum_0
-    -  sum_join_0
-    -  average_filter_0
-    -  gateway
+    - gateway
+    - year_filter_0
+    - language_filter_0
+    - biography_filter_0
+    - image_downloader_0
+    - tokenizer_0
+    - unique_words_filter_0
+    - hasher_0
+    - word_counter_0
+    - join_top_20_0
+    - sum_0
+    - sum_join_0
+    - average_filter_0
     environment:
     - INPUT_FILE=/datasets/pruebas
+    - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - ROW_BATCH_SIZE=20
+    - QUERIES=1,2,3,4,5
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+
   gateway:
     build:
       context: ./src/
@@ -35,6 +47,13 @@ services:
     - RESULTS_QUEUE=results_queue
     - TOKENIZER_QUEUE=tokenizer_queue
     - YEAR_FILTER_QUEUE=year_filter_queue
+    - QUERIES=1,2,3,4,5
+    - Q1_EOF_EXPECTED=1
+    - Q2_EOF_EXPECTED=1
+    - Q3_EOF_EXPECTED=1
+    - Q4_EOF_EXPECTED=1
+    - Q5_EOF_EXPECTED=1
+
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -68,6 +87,7 @@ services:
     - CONTROL_EXCHANGE_NAME=year_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
     - PYTHONUNBUFFERED=1
 
   language_filter_0:
@@ -85,6 +105,8 @@ services:
     - CONTROL_EXCHANGE_NAME=language_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
   biography_filter_0:
     build:
@@ -101,7 +123,8 @@ services:
     - CONTROL_EXCHANGE_NAME=biography_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
   image_downloader_0:
     build:
@@ -118,7 +141,8 @@ services:
     - CONTROL_EXCHANGE_NAME=image_downloader_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
   tokenizer_0:
     build:
@@ -138,43 +162,47 @@ services:
     - CONTROL_EXCHANGE_NAME=tokenizer_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
   unique_words_filter_0:
-      build:
-        context: ./src/
-        dockerfile: unique_words_filter/Dockerfile
-      container_name: unique_words_filter_0
-      depends_on:
-      - biography_filter_0
-      environment:
-      - BATCH_SIZE=100
-      - REPLICA_ID=0
-      - INPUT_QUEUE_NAME=words_without_stopwords_queue
-      - Q3_4_OUTPUT_QUEUE_NAME=unique_words_queue
-      - CONTROL_EXCHANGE_NAME=unique_words_filter_control
-      - CONTROL_ROUTING_KEY=
-      - RABBITMQ_HOST=rabbitmq
+    build:
+      context: ./src/
+      dockerfile: unique_words_filter/Dockerfile
+    container_name: unique_words_filter_0
+    depends_on:
+    - tokenizer_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_QUEUE_NAME=words_without_stopwords_queue
+    - Q3_4_OUTPUT_QUEUE_NAME=unique_words_queue
+    - CONTROL_EXCHANGE_NAME=unique_words_filter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
-  
   hasher_0:
-      build:
-        context: ./src/
-        dockerfile: hasher/Dockerfile
-      container_name: hasher_0
-      depends_on:
-      - biography_filter_0
-      environment:
-      - BATCH_SIZE=100
-      - REPLICA_ID=0
-      - INPUT_QUEUE_NAME=unique_words_queue
-      - OUTPUT_EXCHANGE_NAME=affinity_words_exchange
-      - OUTPUT_ROUTING_KEY_PREFIX=affinity_words
-      - CONTROL_EXCHANGE_NAME=hasher_control
-      - CONTROL_ROUTING_KEY=
-      - RABBITMQ_HOST=rabbitmq
+    build:
+      context: ./src/
+      dockerfile: hasher/Dockerfile
+    container_name: hasher_0
+    depends_on:
+    - unique_words_filter_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_QUEUE_NAME=unique_words_queue
+    - OUTPUT_EXCHANGE_NAME=affinity_words_exchange
+    - OUTPUT_ROUTING_KEY_PREFIX=affinity_words
+    - CONTROL_EXCHANGE_NAME=hasher_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - NEXT_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
-  
   word_counter_0:
     build:
       context: ./src/
@@ -193,7 +221,9 @@ services:
     - CONTROL_EXCHANGE_NAME=word_counter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-
+    - PREVIOUS_STAGE_REPLICAS=1
+    - NEXT_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
 
   join_top_20_0:
     build:
@@ -201,7 +231,7 @@ services:
       dockerfile: join_top_20/Dockerfile
     container_name: join_top_20_0
     depends_on:
-    - hasher_0
+    - word_counter_0
     environment:
     - BATCH_SIZE=100
     - REPLICA_ID=0
@@ -211,7 +241,9 @@ services:
     - CONTROL_EXCHANGE_NAME=join_top_20_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-  
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
+
   sum_0:
     build:
       context: ./src/
@@ -233,6 +265,7 @@ services:
     - SUM_JOIN_AMOUNT=1
     - BATCH_SIZE=100
     - PYTHONUNBUFFERED=1
+
   sum_join_0:
     build:
       context: ./src/
@@ -252,6 +285,7 @@ services:
     - AVERAGE_FILTER_AMOUNT=1
     - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1
+
   average_filter_0:
     build:
       context: ./src/

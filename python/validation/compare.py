@@ -10,13 +10,29 @@ Ademas, si hay algun archivo de mas en 'expected' sin 'output' falla.
 import csv
 from collections import Counter
 import os
- 
+import sys
+
+# Aumentar el límite de tamaño de campo para evitar errores con campos grandes (como imágenes)
+max_int = sys.maxsize
+while True:
+    try:
+        csv.field_size_limit(max_int)
+        break
+    except OverflowError:
+        max_int = int(max_int / 10)
+
 ROWS_IN_FAIL = 8 #cuantas filas mostrar en caso de error
 
-def read_rows(path):
-    with open(path, newline="") as f:
-        rows= Counter()
-        for row in csv.reader(f):
+def read_rows(path, query=None):
+    is_q2 = (query == 2) or ("result_Q2" in os.path.basename(path))
+    with open(path, newline="", encoding="utf-8", errors="replace") as f:
+        rows = Counter()
+        cleaned_lines = (line.replace("\0", "") for line in f)
+        for row in csv.reader(cleaned_lines):
+            if is_q2 and len(row) >= 2:
+                # Para la Query 2 no se levantan las imágenes del output;
+                # solo nos quedamos con (name, url)
+                row = row[:2]
             rows.update([tuple(row)])
         return rows
 
@@ -42,7 +58,11 @@ def compare_multiset(got,expected):
     return ok, {"missing": missing, "unexpected": unexpected,"duplicated": duplicated}
 
 COMPARATORS = {
-    1: compare_multiset
+    1: compare_multiset,
+    2: compare_multiset,
+    3: compare_multiset,
+    4: compare_multiset,
+    5: compare_multiset,
 }
 
 def show(prefix,counter):

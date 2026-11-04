@@ -110,6 +110,7 @@ def generate_client(wanted_queries, client_depends_on, row_batch_size=1000):
 {dep_lines}
     environment:
     - INPUT_FILE=/datasets
+    - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678

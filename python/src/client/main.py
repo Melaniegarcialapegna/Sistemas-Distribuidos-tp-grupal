@@ -13,10 +13,8 @@ from common import message_protocol
 INPUT_FILE = os.environ["INPUT_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/output")
+OUTPUT_DIR = os.environ["OUTPUT_DIR"]
 ROW_BATCH_SIZE = int(os.environ.get("ROW_BATCH_SIZE", 1000))
-
-ROW_BATCH_SIZE = int(os.environ.get("ROW_BATCH_SIZE", "1000"))
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 QUERIES_ENV = os.environ.get("QUERIES")
 if QUERIES_ENV:

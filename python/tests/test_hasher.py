@@ -36,7 +36,6 @@ from common.utils import fnv1a_32
 
 
 class TestHasherWorker(unittest.TestCase):
-    @patch.dict(os.environ, {"NEXT_STAGE_REPLICAS": "3", "PREVIOUS_STAGE_REPLICAS": "1", "REPLICA_ID": "test_replica"})
     @patch("common.middleware.RabbitMQHandler")
     def setUp(self, mock_handler_cls):
         self.mock_output_handler = MagicMock()
@@ -51,6 +50,9 @@ class TestHasherWorker(unittest.TestCase):
             control_exchange_name="ctrl_ex",
             output_exchange_name="output_ex",
             output_routing_key_prefix="words",
+            replica_id="test_replica",
+            previous_stage_replicas=1,
+            next_stage_replicas=3,
         )
 
     def test_init_creates_exchange_with_routing_keys(self):

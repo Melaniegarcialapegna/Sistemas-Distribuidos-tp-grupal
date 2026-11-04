@@ -48,6 +48,8 @@ class TestUniqueWordsFilterWorker(unittest.TestCase):
             control_routing_key="ctrl_key",
             control_exchange_name="ctrl_ex",
             q3_4_output_queue_name="q3_4_queue",
+            replica_id="test_replica",
+            previous_stage_replicas=1,
         )
 
     def test_init_configures_queues(self):

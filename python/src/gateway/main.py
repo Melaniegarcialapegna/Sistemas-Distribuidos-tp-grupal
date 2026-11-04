@@ -16,7 +16,12 @@ RESULTS_QUEUE = os.environ["RESULTS_QUEUE"]
 YEAR_FILTER_QUEUE = os.environ["YEAR_FILTER_QUEUE"]
 TOKENIZER_QUEUE = os.environ["TOKENIZER_QUEUE"]
 
-QUERIES = (1, 2, 3, 4, 5)
+QUERIES_ENV = os.environ.get("QUERIES")
+if QUERIES_ENV:
+    QUERIES = tuple(int(x.strip()) for x in QUERIES_ENV.split(",") if x.strip())
+else:
+    QUERIES = (1, 2, 3, 4, 5)
+
 EOFS_EXPECTED = {}
 for q in QUERIES:
     nombre_variable = f"Q{q}_EOF_EXPECTED"

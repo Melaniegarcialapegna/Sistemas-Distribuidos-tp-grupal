@@ -5,6 +5,7 @@ import logging
 import socket
 import signal
 import threading
+import time
 import pyarrow.parquet as pq
 
 from common import message_protocol
@@ -15,8 +16,26 @@ SERVER_PORT = int(os.environ["SERVER_PORT"])
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/output")
 ROW_BATCH_SIZE = int(os.environ.get("ROW_BATCH_SIZE", 1000))
 
+ROW_BATCH_SIZE = int(os.environ.get("ROW_BATCH_SIZE", "1000"))
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
-EXPECTED_QUERIES = {message_protocol.external.Query.Q1, message_protocol.external.Query.Q2, message_protocol.external.Query.Q3, message_protocol.external.Query.Q4,message_protocol.external.Query.Q5} # add to config
+QUERIES_ENV = os.environ.get("QUERIES")
+if QUERIES_ENV:
+    _query_map = {
+        1: message_protocol.external.Query.Q1,
+        2: message_protocol.external.Query.Q2,
+        3: message_protocol.external.Query.Q3,
+        4: message_protocol.external.Query.Q4,
+        5: message_protocol.external.Query.Q5,
+    }
+    EXPECTED_QUERIES = {_query_map[int(q.strip())] for q in QUERIES_ENV.split(",") if q.strip()}
+else:
+    EXPECTED_QUERIES = {
+        message_protocol.external.Query.Q1,
+        message_protocol.external.Query.Q2,
+        message_protocol.external.Query.Q3,
+        message_protocol.external.Query.Q4,
+        message_protocol.external.Query.Q5,
+    }
 
 
 class Client:
@@ -60,8 +79,10 @@ class Client:
         else:
             raise FileNotFoundError(f"Invalid file path: {input_file}")
 
+        rows_sent = 0
+        
         for parquet_file in parquet_files:
-            logging.info("Sending article info")
+            logging.info(f"Enviando datos de artículos desde el archivo: {parquet_file}")
             parquet = pq.ParquetFile(parquet_file)
             for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
                     batch_data = []
@@ -74,6 +95,9 @@ class Client:
                         message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
                         batch_data
                     )
+                    rows_sent += len(batch_data)
+
+        logging.info(f"Se enviaron {rows_sent} filas de artículos en total.")
 
         message_protocol.external.send_msg(
             self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
@@ -134,9 +158,20 @@ def main() -> int:
         receiver_thread = threading.Thread(target=client.recv_results)
         receiver_thread.start()
 
+        start = time.time()
+
+        logging.info("Enviando informacion de articulos")
+
         client.send_article_info(INPUT_FILE)
 
+        t_envio = time.time() - start
+        logging.info(f"Tiempo de envio: {t_envio:.2f} segundos")
+
+        logging.info("Esperando resultados")
+
         receiver_thread.join()
+
+        logging.info("Todos los resultados recibidos, cerrando cliente. Tiempo total: {:.2f} segundos (Tiempo de envio: {:.2f} segundos)".format(time.time() - start, t_envio))
     except socket.error:
         if not client.closed:
             logging.error("The connection with the server was lost")

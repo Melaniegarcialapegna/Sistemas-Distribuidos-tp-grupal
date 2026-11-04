@@ -4,21 +4,29 @@ from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 
 FILTER_YEAR = 2020
+HOST = os.environ.get("RABBITMQ_HOST")
+INPUT_QUEUE_NAME = os.environ.get("INPUT_QUEUE_NAME")
+Q1_OUTPUT_QUEUE_NAME = os.environ.get("Q1_OUTPUT_QUEUE_NAME")
+Q2_OUTPUT_QUEUE_NAME = os.environ.get("Q2_OUTPUT_QUEUE_NAME")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
+CONTROL_ROUTING_KEY = os.environ.get("CONTROL_ROUTING_KEY", "")
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
+PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
 
 class YearFilterWorker(BaseWorker):
-    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name, q2_output_queue_name):
+    def __init__(self, batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name, q2_output_queue_name, replica_id, previous_stage_replicas):
         super().__init__(batch_size, host)
         self._create_output_queue(q1_output_queue_name)
         self._create_output_queue(q2_output_queue_name)
         self.q1_output_queue_name = q1_output_queue_name
         self.q2_output_queue_name = q2_output_queue_name
         self.eof_coordinator = QueueEofCoordinator(
-            replica_id=os.environ.get("REPLICA_ID", "default_replica"),
-            previous_stage_replicas=int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1")),
+            replica_id=replica_id,
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._flush_all,
             publish_control=self._publish_control_message
         )
-        self.input_queue_name = input_queue_name
         self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
 
     def process_data(self, client_id, message):
@@ -33,15 +41,8 @@ class YearFilterWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    host = os.environ["RABBITMQ_HOST"]
-    input_queue_name = os.environ["INPUT_QUEUE_NAME"]
-    q1_output_queue_name = os.environ["Q1_OUTPUT_QUEUE_NAME"]
-    q2_output_queue_name = os.environ["Q2_OUTPUT_QUEUE_NAME"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    control_exchange_name = os.environ["CONTROL_EXCHANGE_NAME"]
-    control_routing_key = os.environ["CONTROL_ROUTING_KEY"]
 
-    year_filter_worker = YearFilterWorker(batch_size, host, input_queue_name, control_routing_key, control_exchange_name, q1_output_queue_name, q2_output_queue_name)
+    year_filter_worker = YearFilterWorker(BATCH_SIZE, HOST, INPUT_QUEUE_NAME, CONTROL_ROUTING_KEY, CONTROL_EXCHANGE_NAME, Q1_OUTPUT_QUEUE_NAME, Q2_OUTPUT_QUEUE_NAME, REPLICA_ID, PREVIOUS_STAGE_REPLICAS)
     year_filter_worker.start()
     return 0
 

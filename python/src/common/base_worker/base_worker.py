@@ -4,11 +4,13 @@ import logging
 from common import middleware, message_protocol
 from common.message_protocol import internal
 from common.message_protocol import msgtype as msg
+import signal
 
 
 class BaseWorker(ABC):
 
     def __init__(self, batch_size, host):
+        self.suscribe_signal()
         self.batch_size = batch_size
         self.outgoing_batches = {}  # {client_id: {target_key: [item1, item2, ...]}}
         self.output_queues = set()
@@ -134,6 +136,13 @@ class BaseWorker(ABC):
 
         self.input_handler.send(self.control_exchange_name, serialized_message, routing_keys=[self.control_routing_key])
 
+    def suscribe_signal(self):
+        def signal_handler(signum, frame):
+            logging.info(f"Received signal {signum}, stopping worker...")
+            self.stop()
+            exit(0)
+       
+        signal.signal(signal.SIGTERM, signal_handler)
 
     @abstractmethod
     def process_data(self, client_id, payload):

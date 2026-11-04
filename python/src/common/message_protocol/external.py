@@ -3,7 +3,6 @@ import os
 
 from . import external_serializer, tlv_protocol
 
-ROW_BATCH_SIZE = 1000 # add to config
 USABLE_COLUMNS = ["name", "url", "date_modified", "sections", "image", "abstract", "in_language"] 
 
 class MsgType:

@@ -34,14 +34,10 @@ except ImportError:
 from word_counter.main import WordCounterWorker
 from common.word_item import WordItem
 from common.utils import fnv1a_32
+from common.message_protocol.external import Query
 
 
 class TestWordCounterWorker(unittest.TestCase):
-    @patch.dict(os.environ, {
-        "NEXT_STAGE_REPLICAS": "2",
-        "PREVIOUS_STAGE_REPLICAS": "1",
-        "REPLICA_ID": "0"
-    })
     @patch("common.middleware.RabbitMQHandler")
     def setUp(self, mock_handler_cls):
         self.mock_output_handler = MagicMock()
@@ -57,7 +53,9 @@ class TestWordCounterWorker(unittest.TestCase):
             results_queue_name="results_q3",
             top_exchange_name="top_ex",
             top_exchange_rk_prefix="top_rk",
-            top_size=3
+            top_size=3,
+            previous_stage_replicas=1,
+            next_stage_replicas=2,
         )
 
     def test_init_configures_queues_and_exchanges(self):
@@ -91,7 +89,7 @@ class TestWordCounterWorker(unittest.TestCase):
 
             # Luego llega en francés -> intersection reached!
             self.worker.process_data(client_id=1, message=["apple", "fr"])
-            mock_emit.assert_called_once_with(1, "results_q3", ["apple"])
+            mock_emit.assert_called_once_with(1, "results_q3", [Query.Q3, "apple"])
 
             # Llega de nuevo en inglés -> no se re-emite porque ya fue sent
             mock_emit.reset_mock()

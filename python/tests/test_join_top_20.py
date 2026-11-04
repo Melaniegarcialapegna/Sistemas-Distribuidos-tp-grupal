@@ -33,13 +33,10 @@ except ImportError:
 
 from join_top_20.main import JoinTop20Worker
 from common.word_item import WordItem
+from common.message_protocol.external import Query
 
 
 class TestJoinTop20Worker(unittest.TestCase):
-    @patch.dict(os.environ, {
-        "PREVIOUS_STAGE_REPLICAS": "2",
-        "REPLICA_ID": "0"
-    })
     @patch("common.middleware.RabbitMQHandler")
     def setUp(self, mock_handler_cls):
         self.mock_output_handler = MagicMock()
@@ -53,7 +50,8 @@ class TestJoinTop20Worker(unittest.TestCase):
             input_exchange_prefix="top_rk",
             replica_id="0",
             results_queue_name="final_top_20_queue",
-            top_size=3
+            top_size=3,
+            previous_stage_replicas=2,
         )
 
     def test_init_configures_queues_and_handlers(self):
@@ -104,8 +102,9 @@ class TestJoinTop20Worker(unittest.TestCase):
             client_id, queue, payload = mock_emit.call_args[0]
             self.assertEqual(client_id, 1)
             self.assertEqual(queue, "final_top_20_queue")
-            self.assertEqual(len(payload), 1)
-            self.assertEqual([w.word for w in payload[0]], ["cherry", "apple"])
+            self.assertEqual(len(payload), 2)
+            self.assertEqual(payload[0], Query.Q4)
+            self.assertEqual([w.word for w in payload[1]], ["cherry", "apple"])
 
             # Debe haber llamado a _flush_all
             mock_flush_all.assert_called_once_with(1)
@@ -115,7 +114,7 @@ class TestJoinTop20Worker(unittest.TestCase):
              patch.object(self.worker, "_flush_all") as mock_flush_all:
 
             self.worker._on_barrier(client_id=42)
-            mock_emit.assert_called_once_with(42, "final_top_20_queue", [[]])
+            mock_emit.assert_called_once_with(42, "final_top_20_queue", [Query.Q4, []])
             mock_flush_all.assert_called_once_with(42)
 
 

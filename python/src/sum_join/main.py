@@ -3,14 +3,19 @@ import logging
 from common.base_worker import BaseWorker
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
 
-REPLICA_ID = os.environ["REPLICA_ID"]
+HOST = os.environ.get("RABBITMQ_HOST")
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
+SUM_JOIN_EXCHANGE = os.environ.get("SUM_JOIN_EXCHANGE")
+AVERAGE_EXCHANGE = os.environ.get("AVERAGE_EXCHANGE")
+AVERAGE_FILTER_AMOUNT = int(os.environ.get("AVERAGE_FILTER_AMOUNT", 1))
+REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
 PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
-SUM_JOIN_KEY_PREFIX="sum_join_exchange"
-AVERAGE_KEY_PREFIX="average_exchange"
+SUM_JOIN_KEY_PREFIX = "sum_join_exchange"
+AVERAGE_KEY_PREFIX = "average_exchange"
 
 class SumJoinWorker(BaseWorker):
-    def __init__(self, batch_size, host, sum_join_exchange, average_exchange, average_filter_amount):
-        super().__init__(batch_size,host)
+    def __init__(self, batch_size, host, sum_join_exchange, average_exchange, average_filter_amount, replica_id, previous_stage_replicas):
+        super().__init__(batch_size, host)
         self.totals = {} #{client_id: [total_len, total_abstracts]}
 
         self.average_exchange = average_exchange
@@ -18,12 +23,12 @@ class SumJoinWorker(BaseWorker):
         self._create_output_exchange(average_exchange, self.average_routing_keys)
 
         self.eof_coordinator = ExchangeEofCoordinator( 
-            replica_id=REPLICA_ID,
-            previous_stage_replicas=PREVIOUS_STAGE_REPLICAS,
+            replica_id=replica_id,
+            previous_stage_replicas=previous_stage_replicas,
             on_barrier=self._on_barrier,
         )
 
-        self._create_exchange_input_handler(sum_join_exchange, [f"{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}"])
+        self._create_exchange_input_handler(sum_join_exchange, [f"{SUM_JOIN_KEY_PREFIX}_{replica_id}"])
 
     def process_data(self, client_id, message):
         partial_len, partial_abstracts = message
@@ -46,17 +51,13 @@ class SumJoinWorker(BaseWorker):
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    host = os.environ["RABBITMQ_HOST"]
-    batch_size = int(os.environ.get("BATCH_SIZE", 10))
-    sum_join_exchange = os.environ["SUM_JOIN_EXCHANGE"]
-    average_exchange = os.environ["AVERAGE_EXCHANGE"]
-    average_filter_amount = int(os.environ["AVERAGE_FILTER_AMOUNT"])
-
-    worker = SumJoinWorker(batch_size, host, sum_join_exchange,
-                           average_exchange, average_filter_amount)
+    worker = SumJoinWorker(
+        BATCH_SIZE, HOST, SUM_JOIN_EXCHANGE, AVERAGE_EXCHANGE,
+        AVERAGE_FILTER_AMOUNT, REPLICA_ID, PREVIOUS_STAGE_REPLICAS
+    )
     logging.info(f"SumJoin replica {REPLICA_ID} started: "
-                 f"listening {sum_join_exchange}/{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}, "
-                 f"broadcasting to {average_filter_amount} Average filters via {average_exchange}")
+                 f"listening {SUM_JOIN_EXCHANGE}/{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}, "
+                 f"broadcasting to {AVERAGE_FILTER_AMOUNT} Average filters via {AVERAGE_EXCHANGE}")
     worker.start()
     return 0
 

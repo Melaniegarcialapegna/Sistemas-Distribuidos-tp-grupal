@@ -6,6 +6,9 @@ Para usar:
     - python3 validation/results_q1.py expected datasets/enwiki_00000.parquet
     - python3 validation/results_q<i>.py expected datasets/<dataset>.parquet
 
+    Para multiples queries a la vez
+    - python3 validation/results.py expected datasets/<dataset>.parquet -q 1 2 --force
+
 - En docker-compose.baseline.yaml tener la configuración deseada a testear:
     -Generar el docker-compose.baseline.yaml con:
         - xxxxx

@@ -1,6 +1,9 @@
 """
 Corre un escenario de prueba para las queries.
 
+Los resultados esperados son ESTATICOS (carpeta expected/, generada una vez con results_qN.py).
+Este script nunca los recalcula: solo los lee y compara contra lo que escribieron los clientes.
+
 
 Main tiene cuatro modos de ejecucion:
 - python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas y los resultados ya estan en los csv)
@@ -35,6 +38,7 @@ import results_q1
 import argparse
 
 TIMEOUT_DEFAULT = 1000 #segundos xd
+EXPECTED_DIR_DEFAULT = "expected" #carpeta con resultados
 ALL_QUERIES = (1,2,3,4,5)
 
 class ScenarioError(Exception):
@@ -227,30 +231,28 @@ class QueryResults:
     message : str = "" #mensaje de error o advertencia
     details: dict = None #para fail 
 
-def validate_client_results_in_query(client,query):
+def validate_client_results_in_query(client,query,expected_dir):
     """
     Valida los resultados de UNA QUERY para UN CLIENTE
     """
-    results_query = RESULTS.get(query)
+    comparator = compare.COMPARATORS.get(query)
 
-    if results_query is None:
-        return QueryResults(query=query, status="SKIP", message=f"Query {query} no tiene resultados esperados definidos aun")
+    if comparator is None:
+        return QueryResults(query=query, status="SKIP", message=f"Query {query} no tiene resultados definidos para comparar aun")
 
-    try:
-        expected_results = results_query(client.input_file)
+    expected_path = compare.expected_file(expected_dir, client.input_file, query)
+    if not os.path.isfile(expected_path):
+        raise ScenarioError(
+            f"{client.name}: falta el archivo esperado {expected_path}.\n"
+            f"Generarlo con: python3 validation/results_q{query}.py {expected_dir} {client.input_file}")
+    expected_results = compare.read_rows(expected_path)
 
-    except FileNotFoundError :
-        raise ScenarioError(f"{client.name}: no se pudo leer el archivo de entrada")
-
-    except ImportError:
-        raise ScenarioError(f"{client.name}: falta pyarrow para leer parquet.\nInstalarlo con: pip install pyarrow") #TODO: ver si se puede solucionar esto
-
-    output_dir = os.path.join(client.output_dir, f"result_Q{query}.csv")
-
-    if not os.path.isfile(output_dir):
-        return QueryResults(query=query, status="FAIL",rows_expected=sum(expected_results.values()) ,message=f"{client.name}: no se encontro el archivo de salida {output_dir}")
-
-    results_got = compare.read_rows(output_dir)
+    output_path = os.path.join(client.output_dir, f"result_Q{query}.csv")
+ 
+    if not os.path.isfile(output_path):
+        return QueryResults(query=query, status="FAIL", rows_expected=sum(expected_results.values()), message=f"{client.name}: no se encontro el archivo de salida {output_path}")
+    
+    results_got = compare.read_rows(output_path)
     ok, datails = compare.COMPARATORS[query](results_got, expected_results)
 
     comparation_result = "OK" if ok else "FAIL"
@@ -276,7 +278,7 @@ def print_query_result(r: QueryResults):
         compare.show("    inesperada: ", d["unexpected"])
         compare.show("    duplicada:  ", d["duplicated"])
 
-def validate_client_results(clients):
+def validate_client_results(clients,expected_dir):
     """
     Valida todos los clientes e imprime un resumen de los resultados
     Devuelve true si no hubo ningun FAIL
@@ -285,7 +287,7 @@ def validate_client_results(clients):
     for client in clients:
         print(client.name)
         for query in client.queries:
-            result = validate_client_results_in_query(client, query)
+            result = validate_client_results_in_query(client, query,expected_dir)
             print_query_result(result)
             if result.status == "FAIL":
                 all_ok = False
@@ -294,7 +296,7 @@ def validate_client_results(clients):
     if not all_ok:
         print("RESULT: FAILED")
     elif skipped:
-        print(f"RESULT: OK ({skipped} query(s) sin validar: NO TIENEN RESULTADOS ESPERADOS todavia)")
+        print(f"RESULT: OK ({skipped} query(s) sin validar: NO TIENEN RESULTADOS PARA COMPARAR todavia)")
     else:
         print("RESULT: OK")
     return all_ok
@@ -319,7 +321,7 @@ def clenup_output_dir(output_dir):
     Deja vacia la carpeta de salida del cliente (output_dir).
     Esto pq los clientes escriben en modo append y sino se van a ir acumulando los resultados de las distintas corridas.
     """
-    if os.path.isdir("output_dir"):
+    if os.path.isdir(output_dir):
         try:
             shutil.rmtree(output_dir)
         except PermissionError:
@@ -330,7 +332,8 @@ def clenup_output_dir(output_dir):
     os.makedirs(output_dir, exist_ok=True)
 
 
-def run_scenario(compose_path, timeout=TIMEOUT_DEFAULT):
+
+def run_scenario(compose_path, expected_dir, timeout=TIMEOUT_DEFAULT):
     """
     Corre el escnario completo y devuelve trye si los resultados son correctos.
     """
@@ -362,7 +365,7 @@ def run_scenario(compose_path, timeout=TIMEOUT_DEFAULT):
             raise
 
         print(">>Validando resultados...")
-        return validate_client_results(clients)
+        return validate_client_results(clients,expected_dir)
 
     finally:
         #Pase lo que pase no se deja a ningun conetenedor levantado
@@ -383,22 +386,25 @@ def main():
 
     parser.add_argument("--timeout", type=int, default=TIMEOUT_DEFAULT)
     
+    parser.add_argument("--expected", default=EXPECTED_DIR_DEFAULT, help="carpeta con los resultados esperados (por defecto: expected)")
+    
     args = parser.parse_args()
  
     try:
         if args.run:
-            return 0 if run_scenario(args.compose, args.timeout) else 1
-        
+            return 0 if run_scenario(args.compose, args.expected, args.timeout) else 1
+ 
         clients = read_clients(args.compose)
         if args.info:
             for c in clients:
                 print(f"{c.name}\n  input:   {c.input_file}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
+                print(f"  esperado Q1: {compare.expected_file(args.expected, c.input_file, 1)}")
             return 0
-        
+ 
         if args.wait:
             await_client_containers([c.name for c in clients], args.timeout)
-        return 0 if validate_client_results(clients) else 1
-    
+        return 0 if validate_client_results(clients, args.expected) else 1
+ 
     except ScenarioError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2

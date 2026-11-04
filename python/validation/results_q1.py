@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 """
 Se calculan los resultados de la Q1 leyendo directamente del
-parquet (o sea no se pasa por el sistema distribuido) 
+parquet (o sea no se pasa por el sistema distribuido) y se GUARDAN como archivos estaticos:
+ 
+    expected/<nombre_del_dataset>/result_Q1.csv
 
 Requiere de: 
     pip install pyarrow
 
 Ejemplo de uso:
-    python3 validation/results_q1.py oracle --clients 2 datasets/enwiki_00000.parquet datasets/frwiki_00000.parquet
+     python3 validation/results_q1.py expected datasets/enwiki_00000.parquet datasets/frwiki_00000.parquet
 """
 import os
 import glob
@@ -56,23 +58,26 @@ def read_records(path):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("out_dir")
+    p.add_argument("expected_dir", help="carpeta donde se guardan los esperados (ej: expected)")
     p.add_argument("inputs", nargs="+", help="archivo o carpeta de parquets (ruta del HOST)")
-    p.add_argument("--clients", type=int, default=1)
+    p.add_argument("--force", action="store_true", help="pisar esperados que ya existen")
     args = p.parse_args()
  
-    for i in range(args.clients):
-        source = args.inputs[i % len(args.inputs)]
-        client_dir = os.path.join(args.out_dir, f"client_{i}")
-        os.makedirs(client_dir, exist_ok=True)
-        path = os.path.join(client_dir, "result_Q1.csv")
+    for source in args.inputs:
+        path = compare.expected_file(args.expected_dir, source, 1)
+ 
+        if os.path.exists(path) and not args.force:
+            print(f"{source}: ya existe {path}, no se pisa (usar --force para regenerarlo)")
+            continue
+ 
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         count = 0
-        with open(path, "w", newline="") as f: #que se sobreescriba 
+        with open(path, "w", newline="") as f:  # que se sobreescriba
             writer = csv.writer(f, delimiter=",", quotechar='"')
             for row in q1_rows(read_records(source)):
                 writer.writerow(row)
                 count += 1
-        print(f"client_{i}: {count} filas de Q1 desde {source} -> {path}")
+        print(f"{source}: {count} filas de Q1 -> {path}")
     return 0
  
  

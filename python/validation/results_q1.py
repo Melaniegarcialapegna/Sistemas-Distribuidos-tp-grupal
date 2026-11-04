@@ -9,6 +9,9 @@ Requiere de:
     pip install pyarrow
 
 Ejemplo de uso:
+
+     .venv/bin/activate
+     
      python3 validation/results_q1.py expected datasets/enwiki_00000.parquet datasets/frwiki_00000.parquet
 """
 import os
@@ -16,6 +19,7 @@ import glob
 import sys
 import csv
 import argparse
+import compare
 
 FILTER_YEAR = 2020
 ENGLISH_LANGUAGE = "en"
@@ -71,14 +75,20 @@ def main():
             continue
  
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_path = path + ".tmp"
         count = 0
-        with open(path, "w", newline="") as f:  # que se sobreescriba
-            writer = csv.writer(f, delimiter=",", quotechar='"')
-            for row in q1_rows(read_records(source)):
-                writer.writerow(row)
-                count += 1
+        try:
+            with open(tmp_path, "w", newline="") as f:
+                writer = csv.writer(f, delimiter=",", quotechar='"')
+                for row in q1_rows(read_records(source)):
+                    writer.writerow(row)
+                    count += 1
+            os.replace(tmp_path, path)  
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
         print(f"{source}: {count} filas de Q1 -> {path}")
-    return 0
  
  
 if __name__ == "__main__":

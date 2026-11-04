@@ -1,0 +1,13 @@
+Para usar:
+- Si todavia no estan los archivos de RESPUESTAS ESPERADAS de la query deseada:
+    - pip install pyarrow pyyaml
+     (yo lo tengo adentro de un env pero puede instalarse en la compu sino)
+    
+    - python3 validation/results_q1.py expected datasets/enwiki_00000.parquet
+    - python3 validation/results_q<i>.py expected datasets/<dataset>.parquet
+
+- En docker-compose.baseline.yaml tener la configuración deseada a testear:
+    -Generar el docker-compose.baseline.yaml con:
+        - xxxxx
+
+    - python3 validation/scenario.py docker-compose.baseline.yaml --run

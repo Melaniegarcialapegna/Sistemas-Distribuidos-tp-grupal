@@ -8,7 +8,7 @@ Este script nunca los recalcula: solo los lee y compara contra lo que escribiero
 Main tiene cuatro modos de ejecucion:
 - python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas y los resultados ya estan en los csv)
 
-- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes
+- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes y valida
 
 - python3 validation/scenario.py docker-compose.yaml --info -> solo muestra que clientes hay y sus rutas (no valida). Unicamente es para ver que el compose esta bien armado.
 
@@ -30,11 +30,9 @@ from dataclasses import dataclass
 import shutil
 import subprocess
 import sys
-from typing import Counter
 import yaml 
 import os
 import compare #TODO
-import results_q1
 import argparse
 
 TIMEOUT_DEFAULT = 1000 #segundos xd

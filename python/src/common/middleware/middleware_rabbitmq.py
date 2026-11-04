@@ -1,3 +1,4 @@
+import os
 import pika
 import random
 import string
@@ -8,6 +9,10 @@ from .middleware import (
     MessageMiddlewareDisconnectedError,
     MessageMiddlewareCloseError,
 )
+
+HEARTBEAT_TIMEOUT = int(os.environ.get("RABBITMQ_HEARTBEAT", 300))  # 5 minutos por defecto
+
+
 class MessageMiddlewareRabbitMQ:
     PIKA_DISCONNECTION_ERRORS = (
     pika.exceptions.AMQPConnectionError,
@@ -20,7 +25,7 @@ class MessageMiddlewareRabbitMQ:
     """
     def __init__(self, host):
         # Establish a blocking connection to RabbitMQ server
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host, heartbeat=HEARTBEAT_TIMEOUT))
 
         self.channel = self.connection.channel()
 

@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Callable, Dict, List, Optional, Set
 import pika
 import pika.exceptions
@@ -11,6 +12,8 @@ from .middleware_handler import (
 )
 
 logger = logging.getLogger(__name__)
+
+HEARTBEAT_TIMEOUT = int(os.environ.get("RABBITMQ_HEARTBEAT", 300))  # 5 minutos por defecto
 
 
 class RabbitMQHandler(MiddlewareHandler):
@@ -39,6 +42,7 @@ class RabbitMQHandler(MiddlewareHandler):
         :param connection_params: Instancia opcional de pika.ConnectionParameters.
         """
         self.host = host
+        self.connection_params = connection_params
         self.consuming: bool = False
         self.queue_names: List[str] = []
         self.exchange_names: Dict[str, List[str]] = {}
@@ -49,10 +53,17 @@ class RabbitMQHandler(MiddlewareHandler):
         self.connection: Optional[pika.BlockingConnection] = None
         self.channel: Optional[pika.adapters.blocking_connection.BlockingChannel] = None
 
+        self._connect()
+
+    def _connect(self) -> None:
         try:
-            params = connection_params or pika.ConnectionParameters(host=host)
+            params = self.connection_params or pika.ConnectionParameters(host=self.host, heartbeat=HEARTBEAT_TIMEOUT)
             self.connection = pika.BlockingConnection(params)
             self.channel = self.connection.channel()
+            for q in list(self.declared_queues):
+                self.channel.queue_declare(queue=q, durable=True)
+            for ex in list(self.declared_exchanges):
+                self.channel.exchange_declare(exchange=ex, exchange_type="direct", durable=True)
         except self.PIKA_DISCONNECTION_ERRORS as error:
             logger.error(f"Error connecting to RabbitMQ broker at '{self.host}': {error}")
             self.close()
@@ -63,11 +74,10 @@ class RabbitMQHandler(MiddlewareHandler):
             raise MiddlewareMessageError(str(error)) from error
 
     def _ensure_connected(self) -> None:
-        """Verifica que la conexión y el canal sigan abiertos."""
-        if not self.connection or self.connection.is_closed:
-            raise MiddlewareDisconnectedError("RabbitMQ connection is closed")
-        if not self.channel or self.channel.is_closed:
-            raise MiddlewareDisconnectedError("RabbitMQ channel is closed")
+        """Verifica que la conexión y el canal sigan abiertos; reconecta si fueron cerrados por timeout."""
+        if not self.connection or self.connection.is_closed or not self.channel or self.channel.is_closed:
+            logger.warning(f"RabbitMQ connection was closed, reconnecting to '{self.host}'...")
+            self._connect()
 
     def _wrap_callback(self, callback: Callable) -> Callable:
         """

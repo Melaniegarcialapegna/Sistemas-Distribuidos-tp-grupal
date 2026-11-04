@@ -3,24 +3,29 @@ import shutil
 import kagglehub
 
 KAGGLE_DATASET_BASE_PATH = "wikimedia-foundation/wikipedia-structured-contents"
-KAGGLE_EN_FILE_BASE_PATH = "enwiki/data/enwiki_namespace_0_"
-KAGGLE_FR_FILE_BASE_PATH = "frwiki/data/frwiki_namespace_0_"
 
-PER_LANGUAGE_SAMPLE_AMOUNT = 5
-OUTPUT_DIR = "/datasets"
+LANGUAGES = {
+    "enwiki": ("enwiki/data/enwiki_namespace_0_", 265),
+    "frwiki": ("frwiki/data/frwiki_namespace_0_", 103),
+}
+
+DOWNLOAD_PERCENTAGE = int(os.environ.get("DOWNLOAD_PERCENTAGE", 10))  
+OUTPUT_DIR = f"/datasets/{DOWNLOAD_PERCENTAGE}"
 
 def download_kaggle_datasets():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    for kaggle_language_file_path in [KAGGLE_EN_FILE_BASE_PATH, KAGGLE_FR_FILE_BASE_PATH]:
-        for i in range(PER_LANGUAGE_SAMPLE_AMOUNT):
+    for lang_prefix,(base_path, total_files) in LANGUAGES.items():
+            
+        download_amount = max(1, int(total_files * (DOWNLOAD_PERCENTAGE / 100)))
+
+        for i in range(min(download_amount, total_files)):
             file_name_suffix = f"{i:05}.parquet"
-            kaggle_file_path = kaggle_language_file_path + file_name_suffix
+            kaggle_file_path = base_path + file_name_suffix
 
             try:
                 print(f"Descargando {kaggle_file_path}...")
                 
-                lang_prefix = "enwiki" if "enwiki" in kaggle_language_file_path else "frwiki"
                 final_file_name = f"{lang_prefix}_{file_name_suffix}"
                 destination_path = os.path.join(OUTPUT_DIR, final_file_name)
                 

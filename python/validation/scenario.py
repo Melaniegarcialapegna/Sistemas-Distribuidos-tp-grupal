@@ -339,7 +339,7 @@ def run_scenario(compose_path, expected_dir, timeout=TIMEOUT_DEFAULT):
 
     try:
         print(f">>Levantando {compose_path}...")
-        run_docker([*compose, "up", "-d"], f"No se pudo levantar {compose_path}")
+        run_docker([*compose, "up", "-d", "--build"], f"No se pudo levantar {compose_path}")
 
         print(f">> Esperando a: {', '.join(container_names)} (timeout {timeout}s)")
         try:

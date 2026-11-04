@@ -11,6 +11,6 @@ Para usar:
 
 - En docker-compose.baseline.yaml tener la configuración deseada a testear:
     -Generar el docker-compose.baseline.yaml con:
-        - xxxxx
+        - python3 generate_compose.py
 
-    - python3 validation/scenario.py docker-compose.baseline.yaml --run
+    - python3 validation/scenario.py docker-compose.yaml --run

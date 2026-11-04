@@ -3,6 +3,7 @@ __pycache__
 .env
 *.log
 *.csv
+!python/expected/**
 .log
 .venv/
 python/output/

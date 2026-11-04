@@ -5,10 +5,8 @@ Los resultados esperados son ESTATICOS (carpeta expected/, generada una vez con 
 Este script nunca los recalcula: solo los lee y compara contra lo que escribieron los clientes.
 
 
-Main tiene cuatro modos de ejecucion:
+Main tiene tres modos de ejecucion:
 - python3 validation/scenario.py docker-compose.yaml  -> valida los resultados (asumiendo que ya se corrieron las cosas y los resultados ya estan en los csv)
-
-- python3 validation/scenario.py docker-compose.yaml --wait -> espera a los clientes y valida
 
 - python3 validation/scenario.py docker-compose.yaml --info -> solo muestra que clientes hay y sus rutas (no valida). Unicamente es para ver que el compose esta bien armado.
 
@@ -363,8 +361,6 @@ def main():
 
     parser.add_argument("compose", help="ruta al docker-compose.yaml con el que se hizo la corrida")
 
-    parser.add_argument("--wait", action="store_true", help="antes de validar espera a que terminen los clientes")
-
     parser.add_argument("--info", action="store_true", help="solo muestra que clientes hay y sus rutas (no valida)")
 
     parser.add_argument("--run", action="store_true", help="corre todo: limpia output, levanta el compose, espera, valida y baja todo")
@@ -385,10 +381,6 @@ def main():
                 print(f"{c.name}\n  input:   {c.input_file}\n  output:  {c.output_dir}\n  queries: {list(c.queries)}")
                 print(f"  esperado Q1: {compare.expected_file(args.expected, c.input_file, 1)}")
             return 0
- 
-        if args.wait:
-            await_client_containers([c.name for c in clients], args.timeout)
-        return 0 if validate_client_results(clients, args.expected) else 1
  
     except ScenarioError as e:
         print(f"ERROR: {e}", file=sys.stderr)

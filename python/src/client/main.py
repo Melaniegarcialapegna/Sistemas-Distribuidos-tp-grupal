@@ -144,7 +144,7 @@ class Client:
             images_dir = os.path.join(OUTPUT_DIR, "images")
             os.makedirs(images_dir, exist_ok=True)
 
-            with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            with open(filename, "a", newline="", encoding="utf-8") as csvfile:
                 csv_writer = csv.writer(csvfile, delimiter=",", quotechar='"')
                 for row in rows:
                     name = row[0]

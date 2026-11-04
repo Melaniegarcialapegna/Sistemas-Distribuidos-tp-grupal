@@ -1,6 +1,8 @@
 __pycache__
 .vscode
 .env
+*.log
+*.csv
 .log
 .venv/
 python/output/

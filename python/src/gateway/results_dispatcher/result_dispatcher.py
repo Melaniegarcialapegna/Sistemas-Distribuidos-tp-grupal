@@ -43,11 +43,14 @@ class ResultsDispatcher:
             rows_by_query.setdefault(query_id, []).append(row_without_query_id)
         with lock:
             for query_id, rows in rows_by_query.items():
-                external.send_msg(client_socket,
-                                  external.MsgType.QUERY_RESULT_BATCH,
-                                  query_id, rows)
+                if query_id in self.expected_eofs:
+                    external.send_msg(client_socket,
+                                      external.MsgType.QUERY_RESULT_BATCH,
+                                      query_id, rows)
 
     def _on_eof(self, client_id, query_id, client_socket, lock):
+        if query_id not in self.expected_eofs:
+            return
         received = self.eofs_received.setdefault(client_id, {})
         received[query_id] = received.get(query_id, 0) + 1
 

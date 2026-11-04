@@ -98,18 +98,32 @@ def generate_gateway(wanted_queries, replicas):
 {env_block}"""
 
 
-def generate_client(wanted_queries, client_depends_on, row_batch_size=1000):
+def generate_clients(count, wanted_queries, client_depends_on, row_batch_size=1000, input_files=None):
     queries_str = ",".join(str(q) for q in sorted(wanted_queries))
     dep_lines = "\n".join(f"    - {dep}" for dep in client_depends_on)
-    return f"""  client_0:
+
+    if isinstance(input_files, str):
+        input_list = [input_files] * count
+    elif input_files:
+        input_list = list(input_files)
+        if len(input_list) < count:
+            input_list.extend([input_list[-1]] * (count - len(input_list)))
+    else:
+        input_list = ["/datasets"] * count
+
+    blocks = []
+    for i in range(count):
+        output_volume = "./output:/output" if count == 1 else f"./output/client_{i}:/output"
+        input_file = input_list[i]
+        blocks.append(f"""  client_{i}:
     build:
       context: ./src/
       dockerfile: client/Dockerfile
-    container_name: client_0
+    container_name: client_{i}
     depends_on:
 {dep_lines}
     environment:
-    - INPUT_FILE=/datasets
+    - INPUT_FILE={input_file}
     - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -118,7 +132,13 @@ def generate_client(wanted_queries, client_depends_on, row_batch_size=1000):
     - QUERIES={queries_str}
     volumes:
     - ./datasets:/datasets
-    - ./output:/output"""
+    - {output_volume}""")
+    return "\n\n".join(blocks)
+
+
+def generate_client(wanted_queries, client_depends_on, row_batch_size=1000, count=1, input_file="/datasets", input_files=None):
+    inputs = input_files if input_files is not None else input_file
+    return generate_clients(count, wanted_queries, client_depends_on, row_batch_size=row_batch_size, input_files=inputs)
 
 
 def generate_year_filters(count):
@@ -433,7 +453,8 @@ def generate_average_filters(count, tokenizer_replicas, sum_join_amount):
     return "\n\n".join(blocks)
 
 
-def generate_compose(wanted_queries, replicas, row_batch_size=1000):
+def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count=1, input_files=None, input_file=None):
+    inputs = input_files if input_files is not None else (input_file or "/datasets")
     needed_nodes = set()
     for q in wanted_queries:
         needed_nodes.update(QUERY_NODES[q])
@@ -447,7 +468,7 @@ def generate_compose(wanted_queries, replicas, row_batch_size=1000):
                 client_depends.append(f"{service_prefix}_{i}")
 
     services = []
-    services.append(generate_client(wanted_queries, client_depends, row_batch_size=row_batch_size))
+    services.append(generate_clients(client_count, wanted_queries, client_depends, row_batch_size=row_batch_size, input_files=inputs))
     services.append(generate_gateway(wanted_queries, replicas))
     services.append(generate_rabbitmq())
 
@@ -559,6 +580,18 @@ def main():
         help="Réplicas por nodo en formato NODO=CANTIDAD (ej: -r TOKENIZER=3 HASHER=2 WORD_COUNTER=2)"
     )
     parser.add_argument(
+        "-c", "--clients",
+        type=int,
+        default=1,
+        help="Cantidad de clientes a ejecutar (default: 1)"
+    )
+    parser.add_argument(
+        "-i", "--inputs", "--input-file",
+        nargs="+",
+        default=None,
+        help="Ruta(s) de INPUT_FILE para los clientes (ej: -i /datasets/pruebas /datasets/5). Si se pasa una sola, se usa para todos; si se pasan varias, se asigna una por cliente."
+    )
+    parser.add_argument(
         "-b", "--batch-size",
         type=int,
         default=1000,
@@ -613,8 +646,60 @@ def main():
                 replicas[node] = 1
                 print(f"{NODE_DISPLAY_NAMES[node]} ({node}): 1 instancia (default)")
 
+    # Determinar cantidad de clientes
+    if "CLIENT" in cli_replicas:
+        client_count = cli_replicas["CLIENT"]
+    elif args.inputs and len(args.inputs) > 1 and args.clients == 1:
+        client_count = len(args.inputs)
+    elif args.clients != 1:
+        client_count = args.clients
+    elif is_interactive:
+        while True:
+            val = input("¿Cuántos clientes desea ejecutar? [1]: ").strip()
+            if not val:
+                client_count = 1
+                break
+            try:
+                n = int(val)
+                if n > 0:
+                    client_count = n
+                    break
+                print("Por favor, ingrese un número mayor a 0.")
+            except ValueError:
+                print("Por favor, ingrese un número entero válido.")
+    else:
+        client_count = args.clients
+
+    # Determinar datasets (INPUT_FILE) para los clientes
+    input_files = []
+    if args.inputs:
+        input_files = list(args.inputs)
+    elif is_interactive and client_count > 1:
+        same = input("¿Desea usar el mismo dataset para todos los clientes? [Y/n]: ").strip().lower()
+        if same in ("n", "no"):
+            for i in range(client_count):
+                path = input(f"Ruta de INPUT_FILE para client_{i} [/datasets]: ").strip()
+                input_files.append(path if path else "/datasets")
+        else:
+            path = input("Ruta de INPUT_FILE para los clientes [/datasets]: ").strip()
+            input_files = [path if path else "/datasets"] * client_count
+    elif is_interactive:
+        path = input("Ruta de INPUT_FILE para el cliente [/datasets]: ").strip()
+        input_files = [path if path else "/datasets"]
+    else:
+        input_files = ["/datasets"] * client_count
+
+    if len(input_files) < client_count:
+        input_files.extend([input_files[-1]] * (client_count - len(input_files)))
+
     # Generar contenido
-    compose_content = generate_compose(wanted_queries, replicas, row_batch_size=args.batch_size)
+    compose_content = generate_compose(
+        wanted_queries,
+        replicas,
+        row_batch_size=args.batch_size,
+        client_count=client_count,
+        input_files=input_files
+    )
 
     # Determinar ruta destino
     output_path = args.output
@@ -627,6 +712,9 @@ def main():
 
     print(f"\n¡Éxito! Archivo docker-compose generado correctamente en: {output_path}")
     print("\nResumen de la configuración generada:")
+    print(f"  Clientes ({client_count}):")
+    for i in range(client_count):
+        print(f"    - client_{i}: {input_files[i]}")
     print(f"  Queries: {', '.join(f'Q{q}' for q in wanted_queries)}")
     print("  Nodos y réplicas:")
     for node in NODE_ORDER:

@@ -47,19 +47,23 @@ def _recv_empty(socket):
     return None
 
 def _recv_article_record_batch(socket):
-    batch_size = external_serializer.deserialize_uint32(
+    payload_size = external_serializer.deserialize_uint32(
         _recv_sized(socket, external_serializer.UINT32_SIZE)
     )
+    raw_batch = _recv_sized(socket, payload_size)
     batch_data = []
-    for i in range(batch_size):
+    index = 0
+    while index < len(raw_batch):
         record = {}
         for column in USABLE_COLUMNS:
             column_size = external_serializer.deserialize_uint32(
-                _recv_sized(socket, external_serializer.UINT32_SIZE)
+                raw_batch[index:index + external_serializer.UINT32_SIZE]
             )
+            index += external_serializer.UINT32_SIZE
             column_value = external_serializer.deserialize_string(
-                _recv_sized(socket, column_size)
+                raw_batch[index:index + column_size]
             )
+            index += column_size
             record[column] = column_value
         batch_data.append(record)
     return batch_data
@@ -71,21 +75,21 @@ def _send_end_of_records(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.END_OF_RECORDS))
 
 def _send_article_record_batch(socket, batch_data):
-    parts = [
-        external_serializer.serialize_uint32(MsgType.ARTICLE_RECORD_BATCH),
-        external_serializer.serialize_uint32(len(batch_data)),
-    ]
+    payloads = []
     for record in batch_data:
         for column in USABLE_COLUMNS:
             val = record[column]
-
             if not isinstance(val, str):
                 val = str(val) if val is not None else ""
-
             value = external_serializer.serialize_string(val)
-            parts.append(external_serializer.serialize_uint32(len(value)))
-            parts.append(value)
-    socket.sendall(b"".join(parts))
+            payloads.append(external_serializer.serialize_uint32(len(value)))
+            payloads.append(value)
+    raw_payload = b"".join(payloads)
+    header = [
+        external_serializer.serialize_uint32(MsgType.ARTICLE_RECORD_BATCH),
+        external_serializer.serialize_uint32(len(raw_payload)),
+    ]
+    socket.sendall(b"".join(header) + raw_payload)
 
 def _recv_query_result_batch(socket):
     query_id = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))

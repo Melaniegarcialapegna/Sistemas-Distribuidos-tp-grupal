@@ -36,7 +36,7 @@ class BiographyFilterWorker(BaseWorker):
             self.emit(client_id, self.q2_output_queue_name, q2_projection)
 
     def has_biography_section(self, sections):
-        if not isinstance(sections, str):
+        if not isinstance(sections, str) or not sections.strip():
             return False
         section_names =  [section.get("name", "").lower() for section in json.loads(sections)]
         for biography_section_name in BIOGRAPHY_SECTION_NAMES:

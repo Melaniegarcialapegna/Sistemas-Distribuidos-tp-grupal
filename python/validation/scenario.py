@@ -32,7 +32,7 @@ import subprocess
 import sys
 import yaml 
 import os
-import compare #TODO
+import compare 
 import argparse
 
 TIMEOUT_DEFAULT = 1000 #segundos xd

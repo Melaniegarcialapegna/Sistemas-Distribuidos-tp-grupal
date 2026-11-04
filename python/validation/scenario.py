@@ -208,20 +208,7 @@ def read_clients(compose_path):
     compose_dir = os.path.dirname(os.path.abspath(compose_path))
     return [read_client_config(name, services[name], compose_dir) for name in client_names]
 
-# SE CALCULO LO ESPERADO, SE LO LEE Y SE COMPARA ----
-
-def expected_q1(input_file):
-    """ Lo que deberia devolver la Q1 para este parquet"""
-    expected = Counter()
-    articles = results_q1.read_records(input_file) #lee de parquet y devuelve de a un articulo 
-    for row in results_q1.q1_rows(articles):
-        expected[row] += 1
-    return expected
-
-RESULTS = {
-    1: expected_q1,
-
-}
+# SE COMPARA ----
 @dataclass
 class QueryResults:
     query: int

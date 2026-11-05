@@ -90,10 +90,30 @@ def handle_client_response(client_list):
 
 
 def handle_sigterm(server_socket, client_list, sigterm_received):
-    server_socket.shutdown(socket.SHUT_RDWR)
-    for [_, client_socket,_] in client_list:
-        client_socket.shutdown(socket.SHUT_RDWR)
+    logging.info("Signal received in gateway, shutting down gracefully...")
     sigterm_received.value = 1
+    try:
+        server_socket.shutdown(socket.SHUT_RDWR)
+    except Exception as e:
+        logging.debug(f"Error shutting down server socket: {e}")
+    try:
+        server_socket.close()
+    except Exception as e:
+        logging.debug(f"Error closing server socket: {e}")
+
+    try:
+        for item in list(client_list):
+            try:
+                client_socket = item[1]
+                client_socket.shutdown(socket.SHUT_RDWR)
+            except Exception as e:
+                logging.debug(f"Error shutting down client socket: {e}")
+            try:
+                client_socket.close()
+            except Exception as e:
+                logging.debug(f"Error closing client socket: {e}")
+    except Exception as e:
+        logging.debug(f"Error closing client sockets in list: {e}")
 
 
 def main():
@@ -109,12 +129,11 @@ def main():
                 logging.info("Listening to connections")
                 server_socket.bind((SERVER_HOST, SERVER_PORT))
                 server_socket.listen()
-                signal.signal(
-                    signal.SIGTERM,
-                    lambda signum, frame: handle_sigterm(
-                        server_socket, client_list, sigterm_received
-                    ),
+                signal_handler = lambda signum, frame: handle_sigterm(
+                    server_socket, client_list, sigterm_received
                 )
+                signal.signal(signal.SIGTERM, signal_handler)
+                signal.signal(signal.SIGINT, signal_handler)
                 while True:
                     try:
                         client_socket, _ = server_socket.accept()

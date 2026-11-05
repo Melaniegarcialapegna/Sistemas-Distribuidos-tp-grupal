@@ -1,16 +1,16 @@
 from abc import ABC, abstractmethod
 import logging
+import signal
+import sys
 
 from common import middleware, message_protocol
 from common.message_protocol import internal
 from common.message_protocol import msgtype as msg
-import signal
 
 
 class BaseWorker(ABC):
 
     def __init__(self, batch_size, host):
-        self.suscribe_signal()
         self.batch_size = batch_size
         self.outgoing_batches = {}  # {client_id: {target_key: [item1, item2, ...]}}
         self.output_queues = set()
@@ -18,22 +18,40 @@ class BaseWorker(ABC):
         self.emitted_counts = {}  # {client_id: {target_key: count}}
         self.host = host
         self.eof_coordinator = None  # SubclassResponsibility: cada subclase tiene que crear su EOFCoordinator
-        self.output_handler = middleware.RabbitMQHandler(self.host)
+        self.input_handler = None
+        self.output_handler = None
         self.result_query_id = None 
+        self._stopping = False
+        self.suscribe_signal()
+        self.output_handler = middleware.RabbitMQHandler(self.host)
 
     def start(self):
         try:
-            self.input_handler.start_consuming()
+            if self.input_handler:
+                self.input_handler.start_consuming()
+            else:
+                logging.error("Input handler was not configured before start()")
         except Exception as e:
-            logging.exception(f"Error while consuming messages: {e}")
+            if not self._stopping:
+                logging.exception(f"Error while consuming messages: {e}")
+        finally:
+            self.stop()
 
     def stop(self):
-        try:
-            self.input_handler.stop_consuming()
-            self.input_handler.close()
-            self.output_handler.close()
-        except Exception as e:
-            logging.exception(f"Error while stopping worker: {e}")
+        if getattr(self, "input_handler", None):
+            try:
+                self.input_handler.close()
+            except Exception as e:
+                logging.debug(f"Error while closing input handler: {e}")
+            finally:
+                self.input_handler = None
+        if getattr(self, "output_handler", None):
+            try:
+                self.output_handler.close()
+            except Exception as e:
+                logging.debug(f"Error while closing output handler: {e}")
+            finally:
+                self.output_handler = None
 
     def emit(self, client_id, destination, item, routing_keys=None):
         target_key = (destination, tuple(routing_keys) if routing_keys else None)
@@ -138,11 +156,15 @@ class BaseWorker(ABC):
 
     def suscribe_signal(self):
         def signal_handler(signum, frame):
+            if getattr(self, "_stopping", False):
+                return
+            self._stopping = True
             logging.info(f"Received signal {signum}, stopping worker...")
             self.stop()
-            exit(0)
+            sys.exit(0)
        
         signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
 
     @abstractmethod
     def process_data(self, client_id, payload):

@@ -81,10 +81,22 @@ class MessageMiddlewareRabbitMQ:
 
     def close(self):
         try:
-            self.connection.close()
-
+            if hasattr(self, "consuming") and self.consuming:
+                try:
+                    self.stop_consuming()
+                except Exception:
+                    pass
+            if hasattr(self, "channel") and self.channel and self.channel.is_open:
+                try:
+                    self.channel.close()
+                except Exception:
+                    pass
+            if hasattr(self, "connection") and self.connection and self.connection.is_open:
+                self.connection.close()
         except pika.exceptions.AMQPError as error:
             raise MessageMiddlewareCloseError(str(error))
+        except Exception:
+            pass
 
 
 class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareRabbitMQ,MessageMiddlewareQueue):

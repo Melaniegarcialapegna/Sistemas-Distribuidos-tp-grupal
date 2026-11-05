@@ -14,4 +14,4 @@
 
 `make test`: Inicia los contenedores del sistema, espera a que los clientes finalicen, compara los resultados con una ejecución serial y detiene los contenederes.
 
-`make switch`: Permite alternar rápidamente entre los archivos de docker compose de los distintos escenarios provistos.
+`clean-logs`: Hace un make up y persiste los logs de los contenedores en purged_logs.log

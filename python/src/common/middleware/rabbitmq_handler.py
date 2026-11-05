@@ -191,6 +191,7 @@ class RabbitMQHandler(MiddlewareHandler):
         routing_keys: Optional[List[str]] = None,
         callback: Callable = None,
         exchange_type: str = "direct",
+        queue_name: Optional[str] = None
     ) -> str:
         """
         Suscribe el middleware a un exchange asociándole su función de callback específica.
@@ -214,11 +215,15 @@ class RabbitMQHandler(MiddlewareHandler):
             if exchange_name not in self.declared_exchanges:
                 self.channel.exchange_declare(exchange=exchange_name, exchange_type=exchange_type, durable=True)
                 self.declared_exchanges.add(exchange_name)
-
             self.exchange_names.setdefault(exchange_name, []).extend(r_keys)
             subscribed_keys.update(r_keys)
-
-            result_queue = self.channel.queue_declare(queue="", exclusive=True)
+            if queue_name is None:
+                valid_rks = [rk for rk in r_keys if rk]
+                if valid_rks:
+                    queue_name = f"{'_'.join(valid_rks)}_queue"
+                else:
+                    queue_name = ""  # Si no hay routing keys (ej. fanout sin nombre), fallback a autogenerado
+            result_queue = self.channel.queue_declare(queue=queue_name, exclusive=True)
             actual_queue = result_queue.method.queue
 
             self.queue_names.append(actual_queue)

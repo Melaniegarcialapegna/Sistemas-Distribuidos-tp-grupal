@@ -23,14 +23,12 @@ download:
 .PHONY: download
 
 test:
-	mkdir -p output
-	rm ./output/* -f
-	COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
-	PYTHONPATH="$(PWD)/src/common" python3 ./verify_output.py; EXIT_CODE=$$?; \
-	docker compose -f docker-compose.yaml stop -t 5; \
-	docker compose -f docker-compose.yaml down; \
-	exit $$EXIT_CODE
+	python3 validation/scenario.py docker-compose.yaml --run --timeout 100000
 .PHONY: test
+
+clean-logs:
+	make up | python3 purge_logs.py
+.PHONY: clean-logs
 
 switch:
 	@echo Escenarios de prueba:

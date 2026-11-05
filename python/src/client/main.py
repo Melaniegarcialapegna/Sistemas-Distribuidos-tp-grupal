@@ -4,6 +4,7 @@ import os
 import logging
 import socket
 import signal
+import sys
 import threading
 import time
 import pyarrow.parquet as pq
@@ -40,33 +41,50 @@ class Client:
 
     def __init__(self):
         self.closed = False
+        self.server_socket = None
         self._prev_sigterm_handler = signal.signal(signal.SIGTERM, self.handle_sigterm)
+        self._prev_sigint_handler = signal.signal(signal.SIGINT, self.handle_sigterm)
 
     def handle_sigterm(self, signum, frame):
-        logging.info("Recieved SIGTERM signal")
+        if self.closed:
+            return
+        logging.info(f"Received signal {signum}, stopping client...")
         self.closed = True
         self.disconnect()
 
-        if self._prev_sigterm_handler:
-            self._prev_sigterm_handler(signum, frame)
+        prev_handler = self._prev_sigterm_handler if signum == signal.SIGTERM else self._prev_sigint_handler
+        if callable(prev_handler):
+            prev_handler(signum, frame)
+        else:
+            sys.exit(0)
 
     def connect(self, server_host, server_port):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        import time
         
-        # Aca intenta conectarse varias veces. Es medio raro habria que revisarlo. 
         while not self.closed:
             try:
                 self.server_socket.connect((server_host, server_port))
                 logging.info("¡Conectado exitosamente al Gateway!")
                 break
             except socket.error:
+                if self.closed:
+                    break
                 logging.info("Esperando a que el Gateway esté disponible...")
                 time.sleep(1)
 
     def disconnect(self):
-        if self.server_socket:
-            self.server_socket.shutdown(socket.SHUT_RDWR)
+        self.closed = True
+        sock = self.server_socket
+        self.server_socket = None
+        if sock:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except Exception as e:
+                logging.debug(f"Error shutting down socket: {e}")
+            try:
+                sock.close()
+            except Exception as e:
+                logging.debug(f"Error closing socket: {e}")
 
     def send_article_info(self, input_file):
 
@@ -80,26 +98,30 @@ class Client:
         rows_sent = 0
         
         for parquet_file in parquet_files:
+            if self.closed:
+                return
             logging.info(f"Enviando datos de artículos desde el archivo: {parquet_file}")
             parquet = pq.ParquetFile(parquet_file)
             for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
-                    batch_data = []
-                    for r in batch.to_pylist():
-                        r = self._flatten(r)
-                        batch_data.append(r)
+                if self.closed:
+                    return
+                batch_data = []
+                for r in batch.to_pylist():
+                    r = self._flatten(r)
+                    batch_data.append(r)
 
-                    message_protocol.external.send_msg(
-                        self.server_socket,
-                        message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
-                        batch_data
-                    )
-                    rows_sent += len(batch_data)
+                message_protocol.external.send_msg(
+                    self.server_socket,
+                    message_protocol.external.MsgType.ARTICLE_RECORD_BATCH,
+                    batch_data
+                )
+                rows_sent += len(batch_data)
 
-        logging.info(f"Se enviaron {rows_sent} filas de artículos en total.")
-
-        message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
-        )
+        if not self.closed and self.server_socket:
+            logging.info(f"Se enviaron {rows_sent} filas de artículos en total.")
+            message_protocol.external.send_msg(
+                self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
+            )
 
     def recv_results(self):
         external = message_protocol.external
@@ -177,8 +199,10 @@ def main() -> int:
     try:
         logging.info("Conectando")
         client.connect(SERVER_HOST, SERVER_PORT)
+        if client.closed:
+            return 0
 
-        receiver_thread = threading.Thread(target=client.recv_results)
+        receiver_thread = threading.Thread(target=client.recv_results, daemon=True)
         receiver_thread.start()
 
         start = time.time()
@@ -200,8 +224,9 @@ def main() -> int:
             logging.error("The connection with the server was lost")
             return 1
     except Exception as e:
-        logging.error(e)
-        return 2
+        if not client.closed:
+            logging.error(e)
+            return 2
     finally:
         if not client.closed:
             client.disconnect()

@@ -7,9 +7,6 @@ from common import middleware, message_protocol
 from common.message_protocol import internal
 from common.message_protocol import msgtype as msg
 
-LOG_BATCH = 1000000
-
-
 class BaseWorker(ABC):
 
     def __init__(self, batch_size, host):
@@ -26,7 +23,6 @@ class BaseWorker(ABC):
         self._stopping = False
         self.suscribe_signal()
         self.output_handler = middleware.RabbitMQHandler(self.host)
-        self.processed_batches = 0
 
     def start(self):
         try:
@@ -93,10 +89,7 @@ class BaseWorker(ABC):
 
     def visit_batch(self, batch_message):
         for payload in batch_message.payload:
-            self.process_data(batch_message.from_client_id, payload)
-            self.processed_batches += 1
-            if self.processed_batches % LOG_BATCH == 0:
-                logging.info(f"Processed {self.processed_batches} batches")
+            self.process_data(batch_message.from_client_id, payload)  
         self.eof_coordinator.on_data_processed(batch_message.from_client_id, len(batch_message.payload))  # Notify that multiple messages have been processed
 
     def visit_eof(self, eof_message):

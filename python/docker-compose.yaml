@@ -31,7 +31,7 @@ services:
     - average_filter_0
     - average_filter_1
     environment:
-    - INPUT_FILE=/datasets
+    - INPUT_FILE=/datasets/pruebas
     - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway

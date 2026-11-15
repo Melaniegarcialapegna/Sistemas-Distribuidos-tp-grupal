@@ -228,6 +228,7 @@ class RabbitMQHandler(MiddlewareHandler):
             else:
                 #durable con nombre fijo NO exclusiva
                 self.channel.queue_declare(queue=queue_name, durable=True)
+                actual_queue = queue_name   
                 
             self.queue_names.append(actual_queue)
 

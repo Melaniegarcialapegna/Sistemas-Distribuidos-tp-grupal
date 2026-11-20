@@ -28,7 +28,7 @@ class SumJoinWorker(BaseWorker):
             on_barrier=self._on_barrier,
         )
 
-        self._create_exchange_input_handler(sum_join_exchange, [f"{SUM_JOIN_KEY_PREFIX}_{replica_id}"])
+        self._create_exchange_input_handler(sum_join_exchange, [f"{SUM_JOIN_KEY_PREFIX}_{replica_id}"],replica_id)
 
     def process_data(self, client_id, message):
         partial_len, partial_abstracts = message

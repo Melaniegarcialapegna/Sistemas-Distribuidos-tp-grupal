@@ -7,7 +7,6 @@ from common import middleware, message_protocol
 from common.message_protocol import internal
 from common.message_protocol import msgtype as msg
 
-
 class BaseWorker(ABC):
 
     def __init__(self, batch_size, host):
@@ -28,6 +27,7 @@ class BaseWorker(ABC):
     def start(self):
         try:
             if self.input_handler:
+                logging.info("Starting to consume messages...")
                 self.input_handler.start_consuming()
             else:
                 logging.error("Input handler was not configured before start()")
@@ -89,7 +89,7 @@ class BaseWorker(ABC):
 
     def visit_batch(self, batch_message):
         for payload in batch_message.payload:
-            self.process_data(batch_message.from_client_id, payload)
+            self.process_data(batch_message.from_client_id, payload)  
         self.eof_coordinator.on_data_processed(batch_message.from_client_id, len(batch_message.payload))  # Notify that multiple messages have been processed
 
     def visit_eof(self, eof_message):
@@ -137,16 +137,16 @@ class BaseWorker(ABC):
             self.output_handler.declare_exchange(exchange_name)
             self.output_exchanges[exchange_name] = routing_keys
 
-    def _create_queue_input_handler(self, queue_name, control_exchange_name, control_routing_key):
+    def _create_queue_input_handler(self, queue_name, control_exchange_name, control_routing_key,replica_id):
         self.control_exchange_name = control_exchange_name
         self.control_routing_key = control_routing_key
         self.input_handler = middleware.RabbitMQHandler(self.host)
         self.input_handler.subscribe_to_queue(queue_name, self._handle_message)
-        self.input_handler.subscribe_to_exchange(control_exchange_name, [control_routing_key], callback=self._handle_message)
+        self.input_handler.subscribe_to_exchange(control_exchange_name, [control_routing_key], callback=self._handle_message,queue_name=f"{control_exchange_name}_{replica_id}")
 
-    def _create_exchange_input_handler(self, exchange_name, routing_keys):
+    def _create_exchange_input_handler(self, exchange_name, routing_keys,replica_id):
         self.input_handler = middleware.RabbitMQHandler(self.host)
-        self.input_handler.subscribe_to_exchange(exchange_name, routing_keys, callback=self._handle_message)
+        self.input_handler.subscribe_to_exchange(exchange_name, routing_keys, callback=self._handle_message,queue_name=f"{exchange_name}_{replica_id}",)
 
     def _publish_control_message(self, payload, client_id):
         message = msg.ControlMessageType(payload, client_id)

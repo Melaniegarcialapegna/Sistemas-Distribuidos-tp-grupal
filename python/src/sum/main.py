@@ -35,7 +35,7 @@ class SumWorker(BaseWorker):
             publish_control=self._publish_control_message,
         )
 
-        self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key)
+        self._create_queue_input_handler(input_queue_name, control_exchange_name, control_routing_key,replica_id)
 
     def process_data(self, client_id, message):
         total = self.totals.setdefault(client_id, [0, 0])

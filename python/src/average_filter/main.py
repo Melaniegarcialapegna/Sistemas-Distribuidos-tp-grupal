@@ -58,9 +58,9 @@ class AverageFilterWorker(BaseWorker):
         self.input_handler = middleware.RabbitMQHandler(host)
         self.input_handler.subscribe_to_queue(recent_queue, self.recent.handle_message)
 
-        self.input_handler.subscribe_to_exchange(exchange_control, [self.control_routing_key], self.recent.handle_message)
+        self.input_handler.subscribe_to_exchange(exchange_control, [self.control_routing_key], self.recent.handle_message,queue_name=f"{exchange_control}_{replica_id}")
 
-        self.input_handler.subscribe_to_exchange(average_exchange, [f"{AVERAGE_KEY_PREFIX}_{replica_id}"], self.totals.handle_message)
+        self.input_handler.subscribe_to_exchange(average_exchange, [f"{AVERAGE_KEY_PREFIX}_{replica_id}"], self.totals.handle_message, queue_name=f"{average_exchange}_{replica_id}")
 
     def process_data(self, client_id, payload):
         #doc: el baseworker pide el process_data pero aca cada stream tiene la suya 

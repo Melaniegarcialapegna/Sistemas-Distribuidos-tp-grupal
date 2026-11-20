@@ -219,13 +219,17 @@ class RabbitMQHandler(MiddlewareHandler):
             subscribed_keys.update(r_keys)
             if queue_name is None:
                 valid_rks = [rk for rk in r_keys if rk]
+                result_queue = self.channel.queue_declare(queue="", exclusive=True)
+                actual_queue = result_queue.method.queue
                 if valid_rks:
                     queue_name = f"{'_'.join(valid_rks)}_queue"
                 else:
                     queue_name = ""  # Si no hay routing keys (ej. fanout sin nombre), fallback a autogenerado
-            result_queue = self.channel.queue_declare(queue=queue_name, exclusive=True)
-            actual_queue = result_queue.method.queue
-
+            else:
+                #durable con nombre fijo NO exclusiva
+                self.channel.queue_declare(queue=queue_name, durable=True)
+                actual_queue = queue_name   
+                
             self.queue_names.append(actual_queue)
 
             for rk in r_keys:

@@ -25,7 +25,7 @@ class JoinTop20Worker(BaseWorker):
             on_barrier=self._on_barrier
         )
         routing_keys = [f"{input_exchange_prefix}_{replica_id}"]
-        self._create_exchange_input_handler(input_exchange_name, routing_keys)
+        self._create_exchange_input_handler(input_exchange_name, routing_keys,replica_id)
         self.top_size = top_size
         self.result_query_id = Query.Q4
         self.data = {}  # Diccionario para almacenar los datos por cliente_id {client_id: [current_top_20]}

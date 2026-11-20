@@ -8,9 +8,9 @@ from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 from common.message_protocol.external import Query
 
 USER_AGENT = "TP-Distribuidos-FIUBA/1.0 (https://fi.uba.ar; pgillen@fi.uba.ar)"
-MAX_RETRIES = 2
+MAX_RETRIES = 1
 DEFAULT_BACKOFF = 1.0
-MAX_WAIT_TIME = 5.0
+MAX_WAIT_TIME = 2.0
 
 HOST = os.environ.get("RABBITMQ_HOST")
 INPUT_QUEUE_NAME = os.environ.get("INPUT_QUEUE_NAME")

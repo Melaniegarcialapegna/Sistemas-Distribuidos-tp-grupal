@@ -33,14 +33,15 @@ services:
     environment:
     - INPUT_FILE=/datasets/pruebas
     - OUTPUT_DIR=/output
+    - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    - ROW_BATCH_SIZE=1000
+    - ROW_BATCH_SIZE=100
     - QUERIES=1,2,3,4,5
     volumes:
     - ./datasets:/datasets
-    - ./output:/output
+    - ./output/client_2:/output
 
   gateway:
     build:
@@ -464,6 +465,7 @@ services:
     - CONTROL_ROUTING_KEY=
     - SUM_JOIN_EXCHANGE=sum_join
     - SUM_JOIN_AMOUNT=2
+    - SUM_JOIN_AMOUNT=2
     - BATCH_SIZE=100
     - PYTHONUNBUFFERED=1
 
@@ -488,6 +490,7 @@ services:
     - CONTROL_ROUTING_KEY=
     - SUM_JOIN_EXCHANGE=sum_join
     - SUM_JOIN_AMOUNT=2
+    - SUM_JOIN_AMOUNT=2
     - BATCH_SIZE=100
     - PYTHONUNBUFFERED=1
 
@@ -507,8 +510,10 @@ services:
     - RABBITMQ_HOST=rabbitmq
     - REPLICA_ID=0
     - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=2
     - SUM_JOIN_EXCHANGE=sum_join
     - AVERAGE_EXCHANGE=average
+    - AVERAGE_FILTER_AMOUNT=2
     - AVERAGE_FILTER_AMOUNT=2
     - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1
@@ -529,8 +534,10 @@ services:
     - RABBITMQ_HOST=rabbitmq
     - REPLICA_ID=1
     - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=2
     - SUM_JOIN_EXCHANGE=sum_join
     - AVERAGE_EXCHANGE=average
+    - AVERAGE_FILTER_AMOUNT=2
     - AVERAGE_FILTER_AMOUNT=2
     - BATCH_SIZE=10
     - PYTHONUNBUFFERED=1

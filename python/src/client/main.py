@@ -7,7 +7,9 @@ import signal
 import sys
 import threading
 import time
+import queue
 import pyarrow.parquet as pq
+import pyarrow as pa
 
 from common import message_protocol
 
@@ -36,6 +38,7 @@ else:
         message_protocol.external.Query.Q5,
     }
 
+pa.set_memory_pool(pa.system_memory_pool())
 
 class Client:
 
@@ -44,6 +47,8 @@ class Client:
         self.server_socket = None
         self._prev_sigterm_handler = signal.signal(signal.SIGTERM, self.handle_sigterm)
         self._prev_sigint_handler = signal.signal(signal.SIGINT, self.handle_sigterm)
+        self.ack_channel = queue.Queue(maxsize=1)
+
 
     def handle_sigterm(self, signum, frame):
         if self.closed:
@@ -102,7 +107,7 @@ class Client:
                 return
             logging.info(f"Enviando datos de artículos desde el archivo: {parquet_file}")
             parquet = pq.ParquetFile(parquet_file)
-            for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS):
+            for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS, use_threads=False):
                 if self.closed:
                     return
                 batch_data = []
@@ -116,12 +121,15 @@ class Client:
                     batch_data
                 )
                 rows_sent += len(batch_data)
+                self._wait_for_ack()
+            del parquet
 
         if not self.closed and self.server_socket:
             logging.info(f"Se enviaron {rows_sent} filas de artículos en total.")
             message_protocol.external.send_msg(
                 self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
             )
+            self._wait_for_ack
 
     def recv_results(self):
         external = message_protocol.external
@@ -141,7 +149,7 @@ class Client:
                     if queries_done >= EXPECTED_QUERIES:
                         return
                 elif msg_type == message_protocol.external.MsgType.ACK:
-                    continue
+                    self.ack_channel.put(True)
         except Exception as e:
             if not self.closed:
                 logging.error(f"Error in receiver: {e}")
@@ -192,8 +200,17 @@ class Client:
                 for row in rows:
                     csv_writer.writerow(row)
 
+    def _wait_for_ack(self):
+        while not self.closed:
+            try:
+                return self.ack_channel.get(timeout=0.5)
+            except queue.Empty:
+                continue
+        return False
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
+
     client = Client()
 
     try:

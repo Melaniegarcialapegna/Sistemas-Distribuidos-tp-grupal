@@ -285,6 +285,16 @@ class RabbitMQHandler(MiddlewareHandler):
         finally:
             self.consuming = False
 
+    def call_later(self, delay: float, callback: Callable) -> None:
+        """
+        Programa una función para ejecutarse tras 'delay' segundos en el event loop de Pika.
+
+        :param delay: Tiempo de espera en segundos.
+        :param callback: Función a invocar cuando venza el timer.
+        """
+        self._ensure_connected()
+        self.connection.call_later(delay, callback)
+
     def send(
         self,
         destination: str,

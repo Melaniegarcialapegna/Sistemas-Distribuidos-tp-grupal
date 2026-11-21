@@ -1,12 +1,14 @@
 import json
 from . import tlv_protocol as tlv
-from .msgtype import ControlMessageType, EOFMessageType, DataMessageType, BatchMessageType
+from .msgtype import ControlMessageType, EOFMessageType, DataMessageType, BatchMessageType, HeartbeatMessageType, BullyMessageType
 
 MESSAGE_TYPE_REPRESENTATIONS = {
     "EOF": 1,
     "DATA": 2,
     "BATCH": 3,
-    "CONTROL": 4
+    "CONTROL": 4,
+    "HEARTBEAT": 5,
+    "BULLY": 6,
 }
 
 class TLVSerializer:
@@ -35,6 +37,12 @@ class TLVSerializer:
 
     def visit_control(self, control_message):
         return MESSAGE_TYPE_REPRESENTATIONS['CONTROL'].to_bytes(1, "big") + control_message.from_client_id.to_bytes(4, "big") + self.serialize(control_message.payload) 
+
+    def visit_heartbeat(self, heartbeat_message):
+        return MESSAGE_TYPE_REPRESENTATIONS['HEARTBEAT'].to_bytes(1, "big") + heartbeat_message.from_client_id.to_bytes(4, "big") + self.serialize(heartbeat_message.payload)
+
+    def visit_bully(self, bully_message):
+        return MESSAGE_TYPE_REPRESENTATIONS['BULLY'].to_bytes(1, "big") + bully_message.from_client_id.to_bytes(4, "big") + self.serialize(bully_message.payload) 
 
     @staticmethod
     def serialize(payload):
@@ -87,6 +95,12 @@ class TLVDeserializer:
         elif type_byte == MESSAGE_TYPE_REPRESENTATIONS['CONTROL']:
             payload = TLVDeserializer.deserialize(data[5:])  # Deserialize the payload
             return ControlMessageType(payload, client_id)
+        elif type_byte == MESSAGE_TYPE_REPRESENTATIONS['HEARTBEAT']:
+            payload = TLVDeserializer.deserialize(data[5:])  # Deserialize the payload
+            return HeartbeatMessageType(payload, client_id)
+        elif type_byte == MESSAGE_TYPE_REPRESENTATIONS['BULLY']:
+            payload = TLVDeserializer.deserialize(data[5:])  # Deserialize the payload
+            return BullyMessageType(payload, client_id)
         else:
             raise ValueError(f"Unknown type byte: {type_byte}")
 

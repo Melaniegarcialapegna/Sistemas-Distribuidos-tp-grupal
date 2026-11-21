@@ -99,6 +99,15 @@ class MiddlewareHandler(ABC):
         """
         pass
 
+    def call_later(self, delay: float, callback: Callable) -> None:
+        """
+        Programa una función para ejecutarse tras 'delay' segundos en el event loop.
+
+        :param delay: Tiempo de espera en segundos.
+        :param callback: Función a invocar cuando venza el timer.
+        """
+        pass
+
     def declare_queue(
         self,
         queue_name: str,

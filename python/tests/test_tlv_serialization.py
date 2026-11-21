@@ -22,6 +22,8 @@ from src.common.message_protocol.msgtype import (
     EOFMessageType,
     BatchMessageType,
     ControlMessageType,
+    HeartbeatMessageType,
+    BullyMessageType,
 )
 
 
@@ -169,6 +171,33 @@ class TestInternalMessages(unittest.TestCase):
 
         self.assertIsInstance(deserialized, ControlMessageType)
         self.assertEqual(deserialized.payload, control_payload)
+        self.assertEqual(deserialized.from_client_id, client_id)
+
+    def test_serialize_deserialize_heartbeat_message(self):
+        heartbeat_payload = ["worker_0"]
+        client_id = 0
+        heartbeat_message = HeartbeatMessageType(heartbeat_payload, client_id)
+
+        serialized = TLVSerializer.serialize_message(heartbeat_message)
+        deserialized = TLVDeserializer.deserialize_message(serialized)
+
+        self.assertIsInstance(deserialized, HeartbeatMessageType)
+        self.assertEqual(deserialized.payload, heartbeat_payload)
+        self.assertEqual(deserialized.service_name, "worker_0")
+        self.assertEqual(deserialized.from_client_id, client_id)
+
+    def test_serialize_deserialize_bully_message(self):
+        bully_payload = ["ELECTION", 1]
+        client_id = 0
+        bully_message = BullyMessageType(bully_payload, client_id)
+
+        serialized = TLVSerializer.serialize_message(bully_message)
+        deserialized = TLVDeserializer.deserialize_message(serialized)
+
+        self.assertIsInstance(deserialized, BullyMessageType)
+        self.assertEqual(deserialized.payload, bully_payload)
+        self.assertEqual(deserialized.action, "ELECTION")
+        self.assertEqual(deserialized.sender_id, 1)
         self.assertEqual(deserialized.from_client_id, client_id)
 
     def test_deserialize_invalid_message_type(self):

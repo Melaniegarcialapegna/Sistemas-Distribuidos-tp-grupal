@@ -4,8 +4,10 @@ import signal
 import sys
 
 from common import middleware, message_protocol
+from common.heartbeat import HeartbeatSender
 from common.message_protocol import internal
 from common.message_protocol import msgtype as msg
+from common.utils import get_heartbeat_config
 
 class BaseWorker(ABC):
 
@@ -19,14 +21,33 @@ class BaseWorker(ABC):
         self.eof_coordinator = None  # SubclassResponsibility: cada subclase tiene que crear su EOFCoordinator
         self.input_handler = None
         self.output_handler = None
+        self.heartbeat_sender = None
         self.result_query_id = None 
         self._stopping = False
         self.suscribe_signal()
         self.output_handler = middleware.RabbitMQHandler(self.host)
 
+    def _start_heartbeat(self):
+        hb_config = get_heartbeat_config(required=False, require_service_name=True)
+        if not hb_config:
+            return
+
+        self.heartbeat_sender = HeartbeatSender(
+            middleware_handler=self.input_handler,
+            service_name=hb_config.service_name,
+            exchange_name=hb_config.exchange_name,
+            interval=hb_config.interval,
+        )
+        self.heartbeat_sender.start()
+        logging.info(
+            f"[{hb_config.service_name}] HeartbeatSender started on exchange "
+            f"'{hb_config.exchange_name}' (interval={hb_config.interval}s)"
+        )
+
     def start(self):
         try:
             if self.input_handler:
+                self._start_heartbeat()
                 logging.info("Starting to consume messages...")
                 self.input_handler.start_consuming()
             else:
@@ -38,6 +59,13 @@ class BaseWorker(ABC):
             self.stop()
 
     def stop(self):
+        if getattr(self, "heartbeat_sender", None):
+            try:
+                self.heartbeat_sender.stop()
+            except Exception as e:
+                logging.debug(f"Error while stopping heartbeat sender: {e}")
+            finally:
+                self.heartbeat_sender = None
         if getattr(self, "input_handler", None):
             try:
                 self.input_handler.close()

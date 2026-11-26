@@ -2,7 +2,7 @@ import os
 import sys
 import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -52,6 +52,7 @@ for key, val in REQUIRED_ENV_VARS.items():
 from watchdog.main import Watchdog
 from common.message_protocol.internal import TLVDeserializer, TLVSerializer
 from common.message_protocol.msgtype import BullyMessageType, HeartbeatMessageType
+from common.utils import get_watchdog_config
 
 
 class DummyMiddlewareHandler:
@@ -310,13 +311,10 @@ class TestWatchdog(unittest.TestCase):
 
     def test_missing_environment_variable_raises_key_error(self):
         for required_key in REQUIRED_ENV_VARS.keys():
-            saved = os.environ.pop(required_key, None)
-            try:
+            partial_env = {k: v for k, v in REQUIRED_ENV_VARS.items() if k != required_key}
+            with patch.dict(os.environ, partial_env, clear=True):
                 with self.assertRaises(KeyError):
-                    _ = os.environ[required_key]
-            finally:
-                if saved is not None:
-                    os.environ[required_key] = saved
+                    get_watchdog_config()
 
 
 if __name__ == "__main__":

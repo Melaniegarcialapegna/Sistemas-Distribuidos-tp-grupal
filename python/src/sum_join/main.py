@@ -1,17 +1,11 @@
-import os
 import logging
 from common.base_worker import BaseWorker
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
+from common.utils import get_env, get_worker_info
 
-HOST = os.environ.get("RABBITMQ_HOST")
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
-SUM_JOIN_EXCHANGE = os.environ.get("SUM_JOIN_EXCHANGE")
-AVERAGE_EXCHANGE = os.environ.get("AVERAGE_EXCHANGE")
-AVERAGE_FILTER_AMOUNT = int(os.environ.get("AVERAGE_FILTER_AMOUNT", 1))
-REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
-PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
 SUM_JOIN_KEY_PREFIX = "sum_join_exchange"
 AVERAGE_KEY_PREFIX = "average_exchange"
+
 
 class SumJoinWorker(BaseWorker):
     def __init__(self, batch_size, host, sum_join_exchange, average_exchange, average_filter_amount, replica_id, previous_stage_replicas):
@@ -50,14 +44,23 @@ class SumJoinWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    info = get_worker_info()
+    sum_join_exchange = get_env("SUM_JOIN_EXCHANGE")
+    average_exchange = get_env("AVERAGE_EXCHANGE")
+    average_filter_amount = get_env("AVERAGE_FILTER_AMOUNT", int, default=1)
 
     worker = SumJoinWorker(
-        BATCH_SIZE, HOST, SUM_JOIN_EXCHANGE, AVERAGE_EXCHANGE,
-        AVERAGE_FILTER_AMOUNT, REPLICA_ID, PREVIOUS_STAGE_REPLICAS
+        info.batch_size,
+        info.service.rabbitmq_host,
+        sum_join_exchange,
+        average_exchange,
+        average_filter_amount,
+        info.service.replica_id,
+        info.control.previous_stage_replicas,
     )
-    logging.info(f"SumJoin replica {REPLICA_ID} started: "
-                 f"listening {SUM_JOIN_EXCHANGE}/{SUM_JOIN_KEY_PREFIX}_{REPLICA_ID}, "
-                 f"broadcasting to {AVERAGE_FILTER_AMOUNT} Average filters via {AVERAGE_EXCHANGE}")
+    logging.info(f"SumJoin replica {info.service.replica_id} started: "
+                 f"listening {sum_join_exchange}/{SUM_JOIN_KEY_PREFIX}_{info.service.replica_id}, "
+                 f"broadcasting to {average_filter_amount} Average filters via {average_exchange}")
     worker.start()
     return 0
 

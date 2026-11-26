@@ -10,22 +10,9 @@ from common.heartbeat import HeartbeatSender
 from common.message_protocol.internal import TLVDeserializer, TLVSerializer
 from common.message_protocol.msgtype import BullyMessageType, HeartbeatMessageType
 from common.middleware.middleware_handler import MiddlewareHandler
+from common.utils import get_watchdog_config
 
 logger = logging.getLogger(__name__)
-
-# Environment configuration - Sin valores por default; si falta alguna variable el proceso falla al iniciar
-RABBITMQ_HOST = os.environ["RABBITMQ_HOST"]
-HEARTBEAT_INTERVAL = float(os.environ["HEARTBEAT_INTERVAL"])
-HEARTBEAT_TIMEOUT = float(os.environ["HEARTBEAT_TIMEOUT"])
-INITIAL_GRACE_PERIOD = float(os.environ["INITIAL_GRACE_PERIOD"])
-REVIVE_GRACE_PERIOD = float(os.environ["REVIVE_GRACE_PERIOD"])
-WATCHLIST_ENV = os.environ["WATCHLIST"]
-WATCHLIST = [s.strip() for s in WATCHLIST_ENV.split(",") if s.strip()]
-REPLICA_ID = int(os.environ["REPLICA_ID"])
-TOTAL_WATCHDOGS = int(os.environ["TOTAL_WATCHDOGS"])
-ELECTION_TIMEOUT = float(os.environ["ELECTION_TIMEOUT"])
-HEARTBEAT_EXCHANGE_NAME = os.environ["HEARTBEAT_EXCHANGE_NAME"]
-WATCHDOG_EXCHANGE_NAME = os.environ["WATCHDOG_EXCHANGE_NAME"]
 
 
 class Watchdog:
@@ -426,6 +413,7 @@ class Watchdog:
                         f"Reviving container as LEADER..."
                     )
                     self._revive_service(service)
+                    # Tambien otorgamos gracia para no disparar revivals constantemente
                     self.received_heartbeats[service] = now + self.revive_grace_period
                 else:
                     logger.debug(
@@ -455,17 +443,18 @@ class Watchdog:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    config = get_watchdog_config()
     watchdog = Watchdog(
-        rabbitmq_host=RABBITMQ_HOST,
-        heartbeat_interval=HEARTBEAT_INTERVAL,
-        heartbeat_timeout=HEARTBEAT_TIMEOUT,
-        watchlist=WATCHLIST,
-        replica_id=REPLICA_ID,
-        total_watchdogs=TOTAL_WATCHDOGS,
-        election_timeout=ELECTION_TIMEOUT,
-        heartbeat_exchange_name=HEARTBEAT_EXCHANGE_NAME,
-        watchdog_exchange_name=WATCHDOG_EXCHANGE_NAME,
-        initial_grace_period=INITIAL_GRACE_PERIOD,
-        revive_grace_period=REVIVE_GRACE_PERIOD,
+        rabbitmq_host=config.service.rabbitmq_host,
+        heartbeat_interval=config.heartbeat.interval,
+        heartbeat_timeout=config.heartbeat_timeout,
+        watchlist=config.watchlist,
+        replica_id=config.service.replica_id,
+        total_watchdogs=config.total_watchdogs,
+        election_timeout=config.election_timeout,
+        heartbeat_exchange_name=config.heartbeat.exchange_name,
+        watchdog_exchange_name=config.watchdog_exchange_name,
+        initial_grace_period=config.initial_grace_period,
+        revive_grace_period=config.revive_grace_period,
     )
     watchdog.start()

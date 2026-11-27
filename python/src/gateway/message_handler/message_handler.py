@@ -1,5 +1,6 @@
 from common.message_protocol.internal import TLVSerializer
 from common.message_protocol.msgtype import BatchMessageType, EOFMessageType
+from common.message_protocol.external import USABLE_COLUMNS
 class MessageHandler:
 
     def __init__(self,client_id):
@@ -8,18 +9,18 @@ class MessageHandler:
         self.sent_articles = 0
     
     def serialize_article_batch(self, records):
-        year_items , tokenizer_items = [], []
-        for r in records:
-            year = int(r["date_modified"][:4])
-            year_items.append([year, r["url"], r["image"], r["sections"],
-                               r["name"], r["date_modified"], r["in_language"]])
-            tokenizer_items.append([year, r["url"], r["abstract"], r["in_language"]])
-            
+        rows = []
+        for record in records:
+            for column in USABLE_COLUMNS:
+                rows.append(record[column])
         self.sent_articles += len(records)
-        return self._batch(year_items), self._batch(tokenizer_items)
+            
+        return self._batch(rows)            
 
     def serialize_eof_message(self):
         return self._eof(self.sent_articles)
+
+    # Helpers
 
     def _batch(self, items):
         return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id))

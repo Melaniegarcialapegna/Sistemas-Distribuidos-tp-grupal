@@ -12,9 +12,8 @@ SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 MOM_HOST = os.environ["RABBITMQ_HOST"]
+RAW_ARTICLES_QUEUE = os.environ["RAW_ARTICLES_QUEUE"]
 RESULTS_QUEUE = os.environ["RESULTS_QUEUE"]
-YEAR_FILTER_QUEUE = os.environ["YEAR_FILTER_QUEUE"]
-TOKENIZER_QUEUE = os.environ["TOKENIZER_QUEUE"]
 
 QUERIES_ENV = os.environ.get("QUERIES")
 if QUERIES_ENV:
@@ -32,9 +31,7 @@ client_id_generator = itertools.count(1)
 
 
 def handle_client_request(client_socket, message_handler,lock):
-    year_filter_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, YEAR_FILTER_QUEUE)
-    tokenizer_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, TOKENIZER_QUEUE)
-    external = message_protocol.external
+    raw_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, RAW_ARTICLES_QUEUE)
 
     try:
         while True:
@@ -43,16 +40,14 @@ def handle_client_request(client_socket, message_handler,lock):
             logging.info(f"Se recibio un mensaje del cliente {msg_type}")
 
             if msg_type == external.MsgType.ARTICLE_RECORD_BATCH:
-                year_batch, tokenizer_batch = message_handler.serialize_article_batch(data)
-                year_filter_queue.send(year_batch)
-                tokenizer_queue.send(tokenizer_batch)
+                serialize_batch = message_handler.serialize_article_batch(data)
+                raw_queue.send(serialize_batch)
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
 
             elif msg_type == external.MsgType.END_OF_RECORDS:
                 eof_message = message_handler.serialize_eof_message()
-                year_filter_queue.send(eof_message)
-                tokenizer_queue.send(eof_message)
+                raw_queue.send(eof_message)
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
                 break
@@ -62,8 +57,7 @@ def handle_client_request(client_socket, message_handler,lock):
     except Exception as e:
         logging.error(e)
     finally:
-        year_filter_queue.close()
-        tokenizer_queue.close()
+        raw_queue.close()
 
 
 def handle_client_response(client_list):

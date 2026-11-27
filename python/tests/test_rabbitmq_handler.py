@@ -248,6 +248,19 @@ class TestRabbitMQHandler(unittest.TestCase):
         self.handler.subscribe_to_exchange("ex_1", ["k2"], dummy_callback)
         self.assertEqual(self.handler.subscribed_exchange_keys["ex_1"], {"k1", "k2"})
 
+    def test_subscribe_to_exchange_named_exclusive_queue(self):
+        dummy_callback = MagicMock()
+        actual = self.handler.subscribe_to_exchange(
+            "hb_ex",
+            [""],
+            dummy_callback,
+            exchange_type="fanout",
+            queue_name="watchdog_hb_0",
+            exclusive=True,
+        )
+        self.assertEqual(actual, "watchdog_hb_0")
+        self.mock_channel.queue_declare.assert_called_with(queue="watchdog_hb_0", exclusive=True)
+
     def test_subscribe_to_different_exchanges_allowed(self):
         dummy_callback = MagicMock()
         mock_decl_queue = MagicMock()

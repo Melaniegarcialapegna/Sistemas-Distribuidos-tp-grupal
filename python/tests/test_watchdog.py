@@ -63,13 +63,14 @@ class DummyMiddlewareHandler:
         self.closed = False
         self.started_consuming = False
 
-    def subscribe_to_exchange(self, exchange_name, routing_keys, callback, exchange_type="direct", queue_name=None):
+    def subscribe_to_exchange(self, exchange_name, routing_keys, callback, exchange_type="direct", queue_name=None, exclusive=None):
         self.subscribed_exchanges.append({
             "exchange": exchange_name,
             "routing_keys": routing_keys,
             "callback": callback,
             "type": exchange_type,
             "queue_name": queue_name,
+            "exclusive": exclusive,
         })
         return queue_name
 
@@ -134,12 +135,14 @@ class TestWatchdog(unittest.TestCase):
         self.assertEqual(hb_sub["exchange"], "hb_ex")
         self.assertEqual(hb_sub["type"], "fanout")
         self.assertEqual(hb_sub["queue_name"], "watchdog_hb_1")
+        self.assertTrue(hb_sub["exclusive"])
 
         ctrl_sub = self.handler.subscribed_exchanges[1]
         self.assertEqual(ctrl_sub["exchange"], "wd_ex")
         self.assertEqual(ctrl_sub["type"], "direct")
         self.assertEqual(ctrl_sub["queue_name"], "watchdog_ctrl_1")
         self.assertEqual(ctrl_sub["routing_keys"], ["watchdog_1", "watchdog_broadcast"])
+        self.assertTrue(ctrl_sub["exclusive"])
 
     def test_startup_highest_id_becomes_leader_directly(self):
         # Replica 2 es la mayor (total_watchdogs=3)
@@ -187,9 +190,61 @@ class TestWatchdog(unittest.TestCase):
         self.assertTrue(wd.is_leader)
         self.assertEqual(wd.leader_id, 1)
 
-        # Y revive al nodo 2 que estaba caído
+        # Y revive al nodo 2 que estaba caído (status != "running")
         self.mock_docker.containers.get.assert_called_with("watchdog_2")
-        self.mock_container.restart.assert_called()
+        self.mock_container.start.assert_called()
+
+    def test_become_leader_does_not_restart_healthy_booting_higher_node(self):
+        # Si watchdog_2 ya está running y dentro de su ventana de gracia, no lo reinicia
+        self.mock_container.status = "running"
+        wd = self._create_watchdog(replica_id=1, total_watchdogs=3, initial_grace_period=5.0)
+
+        wd.become_leader()
+
+        self.mock_docker.containers.get.assert_called_with("watchdog_2")
+        self.mock_container.start.assert_not_called()
+        self.mock_container.restart.assert_not_called()
+
+    def test_become_leader_restarts_running_but_timed_out_higher_node(self):
+        # Si watchdog_2 figura running pero su heartbeat expiró, sí lo reinicia
+        self.mock_container.status = "running"
+        wd = self._create_watchdog(
+            replica_id=1,
+            total_watchdogs=3,
+            heartbeat_timeout=2.0,
+            initial_grace_period=0.0,
+        )
+        wd.received_heartbeats["watchdog_2"] = time.time() - 5.0
+
+        wd.become_leader()
+
+        self.mock_docker.containers.get.assert_called_with("watchdog_2")
+        self.mock_container.restart.assert_called_once()
+
+    def test_ok_received_schedules_coordinator_timeout_and_retries_election(self):
+        wd = self._create_watchdog(replica_id=1, total_watchdogs=3, election_timeout=1.0)
+        wd.start_election()
+        gen_before = wd._election_generation
+
+        # Simulamos llegada de OK desde replica 2
+        ok_msg = BullyMessageType(payload=["OK", 2])
+        wd._handle_election_message(TLVSerializer.serialize_message(ok_msg))
+        self.assertTrue(wd.ok_received)
+
+        # Disparamos el election timeout: debe programar el coordinator timeout (2 * election_timeout)
+        _, election_cb = self.handler.scheduled_callbacks[-1]
+        election_cb()
+        self.assertFalse(wd.is_leader)
+        self.assertTrue(wd.is_electing)
+
+        delay, coord_cb = self.handler.scheduled_callbacks[-1]
+        self.assertEqual(delay, 2.0)
+
+        # Si el coordinador nunca anunció, el timeout reinicia la elección
+        coord_cb()
+        self.assertGreater(wd._election_generation, gen_before)
+        self.assertFalse(wd.ok_received)
+        self.assertTrue(wd.is_electing)
 
     def test_election_message_from_lower_id_replies_ok_and_starts_election(self):
         # Replica 1 recibe ELECTION de replica 0

@@ -156,6 +156,7 @@ class Watchdog:
             callback=self._handle_heartbeat,
             exchange_type="fanout",
             queue_name=hb_queue,
+            exclusive=True,
         )
 
         # 3. Suscribirse al exchange direct de control entre Watchdogs
@@ -167,6 +168,7 @@ class Watchdog:
             callback=self._handle_election_message,
             exchange_type="direct",
             queue_name=ctrl_queue,
+            exclusive=True,
         )
 
         # 4. Programar chequeo periódico de timeouts
@@ -235,7 +237,10 @@ class Watchdog:
         )
 
     def _on_election_timeout(self, generation: int) -> None:
-        """Si ningún nodo de mayor ID respondió OK dentro del timeout, asumimos el liderazgo."""
+        """
+        Si ningún nodo de mayor ID respondió OK dentro del timeout, asumimos el liderazgo.
+        Si recibimos OK, programamos un timeout de respaldo esperando COORDINATOR.
+        """
         if self._stopping or not self.is_electing or generation != self._election_generation:
             return
 
@@ -246,9 +251,28 @@ class Watchdog:
             )
             self.become_leader()
         else:
+            coordinator_wait = self.election_timeout * 2
             logger.info(
-                f"[{self.replica_id}] Election timeout: OK was received, standing by for coordinator."
+                f"[{self.replica_id}] Election timeout: OK was received, waiting up to "
+                f"{coordinator_wait}s for COORDINATOR."
             )
+            self.rabbit_handler.call_later(
+                coordinator_wait,
+                lambda: self._on_coordinator_timeout(generation),
+            )
+
+    def _on_coordinator_timeout(self, generation: int) -> None:
+        """Reintenta la elección si quien respondió OK no emitió COORDINATOR a tiempo."""
+        if self._stopping or not self.is_electing or generation != self._election_generation:
+            return
+
+        logger.warning(
+            f"[{self.replica_id}] Coordinator timeout: no COORDINATOR received after OK. "
+            "Restarting election..."
+        )
+        self.is_electing = False
+        self.ok_received = False
+        self.start_election()
 
     def become_leader(self) -> None:
         """Proclama el liderazgo, emite COORDINATOR y revive a los nodos de mayor ID caídos."""
@@ -261,17 +285,50 @@ class Watchdog:
         logger.info(f"[{self.replica_id}] Broadcasting COORDINATOR announcement.")
         self._broadcast_coordinator()
 
-        # 2. Revivir a las réplicas de mayor ID caídas (si existen)
+        # 2. Revivir a las réplicas de mayor ID solo si están caídas o sin responder
         higher_nodes = [i for i in range(self.replica_id + 1, self.total_watchdogs)]
         if higher_nodes:
             logger.info(
-                f"[{self.replica_id}] As new leader, reviving dead higher ID watchdogs: {higher_nodes}"
+                f"[{self.replica_id}] As new leader, checking higher ID watchdogs: {higher_nodes}"
             )
             now = time.time()
             for higher_id in higher_nodes:
-                higher_service = f"watchdog_{higher_id}"
-                self._revive_service(higher_service)
-                self.received_heartbeats[higher_service] = now + self.revive_grace_period
+                self._revive_if_needed(f"watchdog_{higher_id}", now)
+
+    def _revive_if_needed(self, service: str, now: float) -> None:
+        """
+        Revive un watchdog de mayor ID solo si está detenido o si su heartbeat expiró.
+        Evita reiniciar contenedores que aún están booteando normalmente.
+        """
+        last_seen = self.received_heartbeats.get(service, 0)
+        timed_out = (now - last_seen) > self.heartbeat_timeout
+
+        if not self.docker_client:
+            if timed_out:
+                self._revive_service(service)
+            return
+
+        try:
+            container = self.docker_client.containers.get(service)
+            status = getattr(container, "status", None)
+            if status != "running":
+                logger.info(
+                    f"[{self.replica_id}] Higher node '{service}' status is '{status}'. Starting..."
+                )
+                container.start()
+                self.received_heartbeats[service] = now + self.revive_grace_period
+            elif timed_out:
+                logger.warning(
+                    f"[{self.replica_id}] Higher node '{service}' is running but timed out. Restarting..."
+                )
+                container.restart()
+                self.received_heartbeats[service] = now + self.revive_grace_period
+            else:
+                logger.info(
+                    f"[{self.replica_id}] Higher node '{service}' is already running and healthy/booting. Skipping restart."
+                )
+        except Exception as e:
+            logger.error(f"[{self.replica_id}] Failed checking/reviving '{service}': {e}")
 
     def _handle_election_message(
         self,

@@ -1,20 +1,10 @@
-import os
 import logging
 from common.base_worker import BaseWorker
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
-from common.utils import fnv1a_32
+from common.utils import fnv1a_32, get_env, get_worker_info
 
-
-HOST = os.environ.get("RABBITMQ_HOST")
-INPUT_QUEUE_NAME = os.environ.get("INPUT_QUEUE_NAME")
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
-CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
-CONTROL_ROUTING_KEY = os.environ.get("CONTROL_ROUTING_KEY", "")
-SUM_JOIN_EXCHANGE = os.environ.get("SUM_JOIN_EXCHANGE")
-SUM_JOIN_AMOUNT = int(os.environ.get("SUM_JOIN_AMOUNT", 1))
-REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
-PREVIOUS_STAGE_REPLICAS = int(os.environ.get("PREVIOUS_STAGE_REPLICAS", "1"))
 SUM_JOIN_PREFIX = "sum_join_exchange"
+
 
 class SumWorker(BaseWorker):
     def __init__(self, batch_size, host, input_queue_name, control_exchange_name,
@@ -58,15 +48,24 @@ class SumWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    info = get_worker_info(require_input_queue=True)
+    sum_join_exchange = get_env("SUM_JOIN_EXCHANGE")
+    sum_join_amount = get_env("SUM_JOIN_AMOUNT", int, default=1)
 
     sum_worker = SumWorker(
-        BATCH_SIZE, HOST, INPUT_QUEUE_NAME, CONTROL_EXCHANGE_NAME,
-        CONTROL_ROUTING_KEY, SUM_JOIN_EXCHANGE, SUM_JOIN_AMOUNT,
-        REPLICA_ID, PREVIOUS_STAGE_REPLICAS
+        info.batch_size,
+        info.service.rabbitmq_host,
+        info.input_queue_name,
+        info.control.control_exchange_name,
+        info.control.control_routing_key,
+        sum_join_exchange,
+        sum_join_amount,
+        info.service.replica_id,
+        info.control.previous_stage_replicas,
     )
 
-    logging.info(f"Sum replica {REPLICA_ID} started: input={INPUT_QUEUE_NAME} "
-                 f"output={SUM_JOIN_EXCHANGE} x{SUM_JOIN_AMOUNT} previous_replicas={PREVIOUS_STAGE_REPLICAS}")
+    logging.info(f"Sum replica {info.service.replica_id} started: input={info.input_queue_name} "
+                 f"output={sum_join_exchange} x{sum_join_amount} previous_replicas={info.control.previous_stage_replicas}")
     
     sum_worker.start()
     return 0

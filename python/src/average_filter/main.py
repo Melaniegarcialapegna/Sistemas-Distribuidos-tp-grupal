@@ -1,24 +1,15 @@
-import os
 import logging
 from common.base_worker import BaseWorker
 from common.message_protocol.external import Query
 from common.eof_coordinator.queue_eof_coordinator import QueueEofCoordinator
 from common.eof_coordinator.exchange_eof_coordinator import ExchangeEofCoordinator
+from common.utils import get_env, get_worker_info
 from input_stream.input_stream import InputStream
 from common import middleware
 from recent_store.recent_store import RecentStore
 
-HOST = os.environ.get("RABBITMQ_HOST")
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
-CONTROL_EXCHANGE_NAME = os.environ.get("CONTROL_EXCHANGE_NAME")
-RECENT_QUEUE_NAME = os.environ.get("RECENT_QUEUE_NAME")
-AVERAGE_EXCHANGE = os.environ.get("AVERAGE_EXCHANGE")
-RESULTS_QUEUE_NAME = os.environ.get("RESULTS_QUEUE_NAME")
-TOKENIZER_REPLICAS = int(os.environ.get("TOKENIZER_REPLICAS", "1"))
-SUM_JOIN_AMOUNT = int(os.environ.get("SUM_JOIN_AMOUNT", 1))
-STORE_PATH = os.environ.get("STORE_PATH")
-REPLICA_ID = os.environ.get("REPLICA_ID", "default_replica")
 AVERAGE_KEY_PREFIX = "average_exchange"
+
 
 class AverageFilterWorker(BaseWorker):
     def __init__(self, batch_size, host, exchange_control, recent_queue, average_exchange,
@@ -115,11 +106,19 @@ class AverageFilterWorker(BaseWorker):
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    info = get_worker_info()
 
     worker = AverageFilterWorker(
-        BATCH_SIZE, HOST, CONTROL_EXCHANGE_NAME, RECENT_QUEUE_NAME,
-        AVERAGE_EXCHANGE, RESULTS_QUEUE_NAME, TOKENIZER_REPLICAS,
-        SUM_JOIN_AMOUNT, STORE_PATH, REPLICA_ID
+        info.batch_size,
+        info.service.rabbitmq_host,
+        info.control.control_exchange_name,
+        get_env("RECENT_QUEUE_NAME"),
+        get_env("AVERAGE_EXCHANGE"),
+        get_env("RESULTS_QUEUE_NAME"),
+        get_env("TOKENIZER_REPLICAS", int, default=1),
+        get_env("SUM_JOIN_AMOUNT", int, default=1),
+        get_env("STORE_PATH"),
+        info.service.replica_id,
     )
 
     worker.start()

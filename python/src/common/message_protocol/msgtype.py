@@ -57,3 +57,39 @@ class ControlMessageType(MessageType):
 
     def visit(self, visitor):
         return visitor.visit_control(self)
+
+class HeartbeatMessageType(MessageType):
+    """
+    Clase que representa un mensaje de latido (heartbeat).
+    """
+
+    def __init__(self, payload, from_client_id=0):
+        super().__init__(payload, from_client_id)
+
+    @property
+    def service_name(self):
+        return self.payload[0] if self.payload else ""
+
+    def visit(self, visitor):
+        return visitor.visit_heartbeat(self)
+
+class BullyMessageType(MessageType):
+    """
+    Clase que representa un mensaje de coordinación del algoritmo Bully.
+    payload = [action, sender_id]
+    donde action puede ser 'ELECTION', 'OK', 'COORDINATOR'.
+    """
+
+    def __init__(self, payload, from_client_id=0):
+        super().__init__(payload, from_client_id)
+
+    @property
+    def action(self):
+        return self.payload[0] if self.payload else ""
+
+    @property
+    def sender_id(self):
+        return int(self.payload[1]) if len(self.payload) > 1 else 0
+
+    def visit(self, visitor):
+        return visitor.visit_bully(self)

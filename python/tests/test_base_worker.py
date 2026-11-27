@@ -120,3 +120,43 @@ class TestBaseWorker(unittest.TestCase):
         rk2_calls = [c for c in exchange_calls if c[1].get("routing_keys") == ["rk2"]]
         self.assertEqual(len(rk1_calls), 2)  # batch + EOF
         self.assertEqual(len(rk2_calls), 1)  # EOF
+
+    def test_start_does_not_start_heartbeat_when_env_not_configured(self):
+        mock_input_handler = MagicMock()
+        self.worker.input_handler = mock_input_handler
+        with patch.dict(os.environ, {}, clear=True):
+            self.worker.start()
+        self.assertIsNone(self.worker.heartbeat_sender)
+        mock_input_handler.start_consuming.assert_called_once()
+
+    def test_start_starts_and_stops_heartbeat_sender_when_configured(self):
+        mock_input_handler = MagicMock()
+        self.worker.input_handler = mock_input_handler
+
+        env = {
+            "HEARTBEAT_EXCHANGE_NAME": "hb_ex",
+            "SERVICE_NAME": "worker_0",
+            "HEARTBEAT_INTERVAL": "2.5",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with patch("common.base_worker.base_worker.HeartbeatSender") as mock_hb_cls:
+                mock_hb_instance = MagicMock()
+                mock_hb_cls.return_value = mock_hb_instance
+
+                self.worker.start()
+
+                mock_hb_cls.assert_called_once_with(
+                    middleware_handler=mock_input_handler,
+                    service_name="worker_0",
+                    exchange_name="hb_ex",
+                    interval=2.5,
+                )
+                mock_hb_instance.start.assert_called_once()
+                mock_input_handler.start_consuming.assert_called_once()
+                mock_hb_instance.stop.assert_called_once()
+
+    def test_start_heartbeat_fails_if_service_name_missing(self):
+        self.worker.input_handler = MagicMock()
+        with patch.dict(os.environ, {"HEARTBEAT_EXCHANGE_NAME": "hb_ex"}, clear=True):
+            with self.assertRaises(KeyError):
+                self.worker._start_heartbeat()

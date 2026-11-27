@@ -484,19 +484,70 @@ def generate_average_filters(count, tokenizer_replicas, sum_join_amount):
     return "\n\n".join(blocks)
 
 
-def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count=1, input_files=None, input_file=None):
+def generate_watchdogs(count, watchlist):
+    if count <= 0:
+        return ""
+    watchlist_str = ",".join(watchlist)
+    blocks = []
+    for i in range(count):
+        blocks.append(f"""  watchdog_{i}:
+    build:
+      context: ./src/
+      dockerfile: watchdog/Dockerfile
+    container_name: watchdog_{i}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+    - RABBITMQ_HOST=rabbitmq
+    - REPLICA_ID={i}
+    - TOTAL_WATCHDOGS={count}
+    - HEARTBEAT_INTERVAL=1.0
+    - HEARTBEAT_TIMEOUT=5.0
+    - INITIAL_GRACE_PERIOD=10.0
+    - REVIVE_GRACE_PERIOD=10.0
+    - ELECTION_TIMEOUT=2.0
+    - HEARTBEAT_EXCHANGE_NAME=heartbeat_exchange
+    - WATCHDOG_EXCHANGE_NAME=watchdog_exchange
+    - WATCHLIST={watchlist_str}
+    - PYTHONUNBUFFERED=1""")
+    return "\n\n".join(blocks)
+
+
+def inject_worker_heartbeat_env(service_block, interval=1.0, exchange="heartbeat_exchange"):
+    lines = service_block.splitlines()
+    result = []
+    current_container = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("container_name:"):
+            current_container = stripped.split(":", 1)[1].strip()
+        result.append(line)
+        if stripped == "environment:" and current_container:
+            result.append(f"    - SERVICE_NAME={current_container}")
+            result.append(f"    - HEARTBEAT_EXCHANGE_NAME={exchange}")
+            result.append(f"    - HEARTBEAT_INTERVAL={interval}")
+    return "\n".join(result)
+
+
+def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count=1, input_files=None, input_file=None, watchdog_count=3):
     inputs = input_files if input_files is not None else (input_file or "/datasets")
     needed_nodes = set()
     for q in wanted_queries:
         needed_nodes.update(QUERY_NODES[q])
 
     client_depends = ["gateway"]
+    worker_containers = []
     for node in NODE_ORDER:
         if node in needed_nodes:
             count = replicas.get(node, 1)
             service_prefix = node.lower()
             for i in range(count):
-                client_depends.append(f"{service_prefix}_{i}")
+                container_name = f"{service_prefix}_{i}"
+                client_depends.append(container_name)
+                worker_containers.append(container_name)
 
     services = []
     services.append(generate_clients(client_count, wanted_queries, client_depends, row_batch_size=row_batch_size, input_files=inputs))
@@ -542,6 +593,13 @@ def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count
 
     if "AVERAGE_FILTER" in needed_nodes:
         services.append(generate_average_filters(replicas["AVERAGE_FILTER"], replicas["TOKENIZER"], replicas["SUM_JOIN"]))
+
+    # Por el momento excluimos client, gateway y rabbitmq (primeros 3 bloques) del monitoreo de heartbeats
+    services[3:] = [inject_worker_heartbeat_env(s) for s in services[3:]]
+
+    watchdogs_block = generate_watchdogs(watchdog_count, worker_containers)
+    if watchdogs_block:
+        services.append(watchdogs_block)
 
     content = "services:\n" + "\n\n".join(services) + "\n"
     return content
@@ -618,6 +676,12 @@ def main():
         type=int,
         default=1,
         help="Cantidad de clientes a ejecutar (default: 1)"
+    )
+    parser.add_argument(
+        "-w", "--watchdogs",
+        type=int,
+        default=3,
+        help="Cantidad de réplicas de Watchdog a ejecutar (default: 3)"
     )
     parser.add_argument(
         "-i", "--inputs", "--input-file",
@@ -726,13 +790,36 @@ def main():
     if len(input_files) < client_count:
         input_files.extend([input_files[-1]] * (client_count - len(input_files)))
 
+    # Determinar cantidad de watchdogs
+    if "WATCHDOG" in cli_replicas:
+        watchdog_count = cli_replicas["WATCHDOG"]
+    elif args.watchdogs != 3:
+        watchdog_count = args.watchdogs
+    elif is_interactive:
+        while True:
+            val = input("¿Cuántos watchdogs desea ejecutar? [3]: ").strip()
+            if not val:
+                watchdog_count = 3
+                break
+            try:
+                n = int(val)
+                if n >= 0:
+                    watchdog_count = n
+                    break
+                print("Por favor, ingrese un número mayor o igual a 0.")
+            except ValueError:
+                print("Por favor, ingrese un número entero válido.")
+    else:
+        watchdog_count = args.watchdogs
+
     # Generar contenido
     compose_content = generate_compose(
         wanted_queries,
         replicas,
         row_batch_size=args.batch_size,
         client_count=client_count,
-        input_files=input_files
+        input_files=input_files,
+        watchdog_count=watchdog_count,
     )
 
     # Determinar ruta destino
@@ -750,6 +837,7 @@ def main():
     for i in range(client_count):
         print(f"    - client_{i}: {input_files[i]}")
     print(f"  Queries: {', '.join(f'Q{q}' for q in wanted_queries)}")
+    print(f"  Watchdogs: {watchdog_count}")
     print("  Nodos y réplicas:")
     for node in NODE_ORDER:
         if node in needed_nodes:

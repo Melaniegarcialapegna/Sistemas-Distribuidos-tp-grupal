@@ -191,7 +191,8 @@ class RabbitMQHandler(MiddlewareHandler):
         routing_keys: Optional[List[str]] = None,
         callback: Callable = None,
         exchange_type: str = "direct",
-        queue_name: Optional[str] = None
+        queue_name: Optional[str] = None,
+        exclusive: Optional[bool] = None,
     ) -> str:
         """
         Suscribe el middleware a un exchange asociándole su función de callback específica.
@@ -219,15 +220,20 @@ class RabbitMQHandler(MiddlewareHandler):
             subscribed_keys.update(r_keys)
             if queue_name is None:
                 valid_rks = [rk for rk in r_keys if rk]
-                result_queue = self.channel.queue_declare(queue="", exclusive=True)
+                is_exclusive = True if exclusive is None else exclusive
+                result_queue = self.channel.queue_declare(queue="", exclusive=is_exclusive)
                 actual_queue = result_queue.method.queue
                 if valid_rks:
                     queue_name = f"{'_'.join(valid_rks)}_queue"
                 else:
                     queue_name = ""  # Si no hay routing keys (ej. fanout sin nombre), fallback a autogenerado
             else:
-                #durable con nombre fijo NO exclusiva
-                self.channel.queue_declare(queue=queue_name, durable=True)
+                is_exclusive = False if exclusive is None else exclusive
+                if is_exclusive:
+                    self.channel.queue_declare(queue=queue_name, exclusive=True)
+                else:
+                    # durable con nombre fijo NO exclusiva
+                    self.channel.queue_declare(queue=queue_name, durable=True)
                 actual_queue = queue_name   
                 
             self.queue_names.append(actual_queue)
@@ -284,6 +290,16 @@ class RabbitMQHandler(MiddlewareHandler):
             raise MiddlewareMessageError(str(error)) from error
         finally:
             self.consuming = False
+
+    def call_later(self, delay: float, callback: Callable) -> None:
+        """
+        Programa una función para ejecutarse tras 'delay' segundos en el event loop de Pika.
+
+        :param delay: Tiempo de espera en segundos.
+        :param callback: Función a invocar cuando venza el timer.
+        """
+        self._ensure_connected()
+        self.connection.call_later(delay, callback)
 
     def send(
         self,

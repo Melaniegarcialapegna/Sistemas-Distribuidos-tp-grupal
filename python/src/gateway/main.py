@@ -35,13 +35,13 @@ def handle_client_request(client_socket, message_handler,lock):
 
     try:
         while True:
-            msg_type, data = external.recv_msg(client_socket)
+            msg_type, data = external.recv_msg_raw(client_socket)
 
             logging.info(f"Se recibio un mensaje del cliente {msg_type}")
 
             if msg_type == external.MsgType.ARTICLE_RECORD_BATCH:
-                serialize_batch = message_handler.serialize_article_batch(data)
-                raw_queue.send(serialize_batch)
+                raw_batch = message_handler.serialize_raw_batch(data)
+                raw_queue.send(raw_batch)
                 with lock:
                     external.send_msg(client_socket, external.MsgType.ACK)
 

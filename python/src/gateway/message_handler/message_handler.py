@@ -7,7 +7,7 @@ class MessageHandler:
         self.client_id = client_id
         self.sent_batches = 0
     
-    def serialize_article_batch(self, raw_bytes):
+    def serialize_raw_batch(self, raw_bytes):
         self.sent_batches += 1
         return self._batch([[raw_bytes]])          
 

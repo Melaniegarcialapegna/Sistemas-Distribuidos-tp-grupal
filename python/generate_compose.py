@@ -4,14 +4,15 @@ import os
 import sys
 
 QUERY_NODES = {
-    1: {"YEAR_FILTER", "LANGUAGE_FILTER"},
-    2: {"YEAR_FILTER", "BIOGRAPHY_FILTER", "IMAGE_DOWNLOADER"},
-    3: {"TOKENIZER", "UNIQUE_WORDS_FILTER", "HASHER", "WORD_COUNTER"},
-    4: {"TOKENIZER", "UNIQUE_WORDS_FILTER", "HASHER", "WORD_COUNTER", "JOIN_TOP_20"},
-    5: {"TOKENIZER", "SUM", "SUM_JOIN", "AVERAGE_FILTER"},
+    1: {"ARTICLE_SPLITTER", "YEAR_FILTER", "LANGUAGE_FILTER"},
+    2: {"ARTICLE_SPLITTER", "YEAR_FILTER", "BIOGRAPHY_FILTER", "IMAGE_DOWNLOADER"},
+    3: {"ARTICLE_SPLITTER", "TOKENIZER", "UNIQUE_WORDS_FILTER", "HASHER", "WORD_COUNTER"},
+    4: {"ARTICLE_SPLITTER", "TOKENIZER", "UNIQUE_WORDS_FILTER", "HASHER", "WORD_COUNTER", "JOIN_TOP_20"},
+    5: {"ARTICLE_SPLITTER", "TOKENIZER", "SUM", "SUM_JOIN", "AVERAGE_FILTER"},
 }
 
 NODE_DISPLAY_NAMES = {
+    "ARTICLE_SPLITTER": "Article Splitter",
     "YEAR_FILTER": "Year Filter",
     "LANGUAGE_FILTER": "Language Filter",
     "BIOGRAPHY_FILTER": "Biography Filter",
@@ -27,6 +28,7 @@ NODE_DISPLAY_NAMES = {
 }
 
 NODE_ORDER = [
+    "ARTICLE_SPLITTER",
     "YEAR_FILTER",
     "LANGUAGE_FILTER",
     "BIOGRAPHY_FILTER",
@@ -70,8 +72,7 @@ def generate_gateway(wanted_queries, replicas):
         "    - SERVER_HOST=gateway",
         "    - SERVER_PORT=5678",
         "    - RESULTS_QUEUE=results_queue",
-        "    - TOKENIZER_QUEUE=tokenizer_queue",
-        "    - YEAR_FILTER_QUEUE=year_filter_queue",
+        "    - RAW_ARTICLES_QUEUE=raw_articles_queue",
         f"    - QUERIES={queries_str}",
     ]
     if 1 in wanted_queries:
@@ -141,7 +142,33 @@ def generate_client(wanted_queries, client_depends_on, row_batch_size=1000, coun
     return generate_clients(count, wanted_queries, client_depends_on, row_batch_size=row_batch_size, input_files=inputs)
 
 
-def generate_year_filters(count):
+def generate_article_splitters(count):
+    blocks = []
+    for i in range(count):
+        blocks.append(f"""  article_splitter_{i}:
+    build:
+      context: ./src/
+      dockerfile: article_splitter/Dockerfile
+    container_name: article_splitter_{i}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID={i}
+    - INPUT_QUEUE_NAME=raw_articles_queue
+    - YEAR_OUTPUT_QUEUE_NAME=year_filter_queue
+    - TOKENIZER_OUTPUT_QUEUE_NAME=tokenizer_queue
+    - CONTROL_EXCHANGE_NAME=article_splitter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1""")
+    return "\n\n".join(blocks)
+
+
+def generate_year_filters(count, prev_replicas):
+    deps = "\n".join(f"    - article_splitter_{j}" for j in range(prev_replicas))
     blocks = []
     for i in range(count):
         blocks.append(f"""  year_filter_{i}:
@@ -150,7 +177,7 @@ def generate_year_filters(count):
       dockerfile: year_filter/Dockerfile
     container_name: year_filter_{i}
     depends_on:
-    - gateway
+{deps}
     environment:
     - BATCH_SIZE=100
     - REPLICA_ID={i}
@@ -160,7 +187,7 @@ def generate_year_filters(count):
     - CONTROL_EXCHANGE_NAME=year_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=1
+    - PREVIOUS_STAGE_REPLICAS={prev_replicas}
     - PYTHONUNBUFFERED=1""")
     return "\n\n".join(blocks)
 
@@ -237,7 +264,10 @@ def generate_image_downloaders(count, prev_replicas):
     return "\n\n".join(blocks)
 
 
-def generate_tokenizers(count):
+def generate_tokenizers(count, prev_replicas):
+    splitter_deps = "\n".join(
+        f"      article_splitter_{j}:\n        condition: service_started" for j in range(prev_replicas)
+    )
     blocks = []
     for i in range(count):
         blocks.append(f"""  tokenizer_{i}:
@@ -248,6 +278,7 @@ def generate_tokenizers(count):
     depends_on:
       rabbitmq:
         condition: service_healthy
+{splitter_deps}
     environment:
     - BATCH_SIZE=100
     - REPLICA_ID={i}
@@ -258,7 +289,7 @@ def generate_tokenizers(count):
     - CONTROL_EXCHANGE_NAME=tokenizer_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=1
+    - PREVIOUS_STAGE_REPLICAS={prev_replicas}
     - PYTHONUNBUFFERED=1""")
     return "\n\n".join(blocks)
 
@@ -472,8 +503,11 @@ def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count
     services.append(generate_gateway(wanted_queries, replicas))
     services.append(generate_rabbitmq())
 
+    if "ARTICLE_SPLITTER" in needed_nodes:
+        services.append(generate_article_splitters(replicas["ARTICLE_SPLITTER"]))
+
     if "YEAR_FILTER" in needed_nodes:
-        services.append(generate_year_filters(replicas["YEAR_FILTER"]))
+        services.append(generate_year_filters(replicas["YEAR_FILTER"], replicas["ARTICLE_SPLITTER"]))
 
     if "LANGUAGE_FILTER" in needed_nodes:
         services.append(generate_language_filters(replicas["LANGUAGE_FILTER"], replicas["YEAR_FILTER"]))
@@ -485,7 +519,7 @@ def generate_compose(wanted_queries, replicas, row_batch_size=1000, client_count
         services.append(generate_image_downloaders(replicas["IMAGE_DOWNLOADER"], replicas["BIOGRAPHY_FILTER"]))
 
     if "TOKENIZER" in needed_nodes:
-        services.append(generate_tokenizers(replicas["TOKENIZER"]))
+        services.append(generate_tokenizers(replicas["TOKENIZER"], replicas["ARTICLE_SPLITTER"]))
 
     if "UNIQUE_WORDS_FILTER" in needed_nodes:
         services.append(generate_unique_words_filters(replicas["UNIQUE_WORDS_FILTER"], replicas["TOKENIZER"]))

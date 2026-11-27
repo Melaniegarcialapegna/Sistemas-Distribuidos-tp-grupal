@@ -31,6 +31,7 @@ client_id_generator = itertools.count(1)
 
 
 def handle_client_request(client_socket, message_handler,lock):
+    external = message_protocol.external
     raw_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, RAW_ARTICLES_QUEUE)
 
     try:

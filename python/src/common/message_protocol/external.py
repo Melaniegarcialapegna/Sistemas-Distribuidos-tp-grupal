@@ -46,11 +46,7 @@ def _recv_sized(socket, size):
 def _recv_empty(socket):
     return None
 
-def _recv_article_record_batch(socket):
-    payload_size = external_serializer.deserialize_uint32(
-        _recv_sized(socket, external_serializer.UINT32_SIZE)
-    )
-    raw_batch = _recv_sized(socket, payload_size)
+def _parse_article_records(raw_batch):
     batch_data = []
     index = 0
     while index < len(raw_batch):
@@ -67,6 +63,18 @@ def _recv_article_record_batch(socket):
             record[column] = column_value
         batch_data.append(record)
     return batch_data
+
+def _recv_article_record_batch(socket):         
+    size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+    return _parse_article_records(_recv_sized(socket, size))
+
+def _recv_article_record_batch_raw(socket):     
+    size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+    return _recv_sized(socket, size)
+
+def recv_msg_raw(socket):
+    msg_type = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
+    return (msg_type, RAW_RECV_MSG_HANDLERS[msg_type](socket))
 
 def _send_ack(socket):
     socket.sendall(external_serializer.serialize_uint32(MsgType.ACK))
@@ -157,6 +165,9 @@ SEND_MSG_HANDLERS = {
     MsgType.QUERY_DONE: _send_query_done,
 }
 
+RAW_RECV_MSG_HANDLERS = {**RECV_MSG_HANDLERS,
+                         MsgType.ARTICLE_RECORD_BATCH: _recv_article_record_batch_raw}
+
 RESULT_MSG_HANDLERS = {
     Query.Q1: receive_row_result,
     Query.Q2: receive_row_result,
@@ -164,3 +175,4 @@ RESULT_MSG_HANDLERS = {
     Query.Q4: receive_top_result,
     Query.Q5: receive_q5_result
 }
+

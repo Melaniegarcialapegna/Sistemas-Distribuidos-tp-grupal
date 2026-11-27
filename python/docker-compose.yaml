@@ -9,23 +9,25 @@ services:
     - article_splitter_0
     - article_splitter_1
     - year_filter_0
-    - year_filter_1
     - language_filter_0
     - biography_filter_0
     - image_downloader_0
     - tokenizer_0
-    - tokenizer_1
+    - unique_words_filter_0
+    - hasher_0
+    - word_counter_0
+    - join_top_20_0
     - sum_0
     - sum_join_0
     - average_filter_0
     environment:
-    - INPUT_FILE=/datasets
+    - INPUT_FILE=/datasets/pruebas
     - OUTPUT_DIR=/output
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     - ROW_BATCH_SIZE=1000
-    - QUERIES=1,2,5
+    - QUERIES=1,2,3,4,5
     volumes:
     - ./datasets:/datasets
     - ./output:/output
@@ -46,9 +48,11 @@ services:
     - SERVER_PORT=5678
     - RESULTS_QUEUE=results_queue
     - RAW_ARTICLES_QUEUE=raw_articles_queue
-    - QUERIES=1,2,5
+    - QUERIES=1,2,3,4,5
     - Q1_EOF_EXPECTED=1
     - Q2_EOF_EXPECTED=1
+    - Q3_EOF_EXPECTED=1
+    - Q4_EOF_EXPECTED=1
     - Q5_EOF_EXPECTED=1
 
   rabbitmq:
@@ -128,26 +132,6 @@ services:
     - PREVIOUS_STAGE_REPLICAS=2
     - PYTHONUNBUFFERED=1
 
-  year_filter_1:
-    build:
-      context: ./src/
-      dockerfile: year_filter/Dockerfile
-    container_name: year_filter_1
-    depends_on:
-    - article_splitter_0
-    - article_splitter_1
-    environment:
-    - BATCH_SIZE=100
-    - REPLICA_ID=1
-    - INPUT_QUEUE_NAME=year_filter_queue
-    - Q1_OUTPUT_QUEUE_NAME=article_language_queue
-    - Q2_OUTPUT_QUEUE_NAME=article_sections_queue
-    - CONTROL_EXCHANGE_NAME=year_filter_control
-    - CONTROL_ROUTING_KEY=
-    - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=2
-    - PYTHONUNBUFFERED=1
-
   language_filter_0:
     build:
       context: ./src/
@@ -155,7 +139,6 @@ services:
     container_name: language_filter_0
     depends_on:
     - year_filter_0
-    - year_filter_1
     environment:
     - BATCH_SIZE=100
     - REPLICA_ID=0
@@ -164,7 +147,7 @@ services:
     - CONTROL_EXCHANGE_NAME=language_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=1
     - PYTHONUNBUFFERED=1
 
   biography_filter_0:
@@ -174,7 +157,6 @@ services:
     container_name: biography_filter_0
     depends_on:
     - year_filter_0
-    - year_filter_1
     environment:
     - BATCH_SIZE=100
     - REPLICA_ID=0
@@ -183,7 +165,7 @@ services:
     - CONTROL_EXCHANGE_NAME=biography_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=1
     - PYTHONUNBUFFERED=1
 
   image_downloader_0:
@@ -229,29 +211,83 @@ services:
     - PREVIOUS_STAGE_REPLICAS=2
     - PYTHONUNBUFFERED=1
 
-  tokenizer_1:
+  unique_words_filter_0:
     build:
       context: ./src/
-      dockerfile: tokenizer/Dockerfile
-    container_name: tokenizer_1
+      dockerfile: unique_words_filter/Dockerfile
+    container_name: unique_words_filter_0
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      article_splitter_0:
-        condition: service_started
-      article_splitter_1:
-        condition: service_started
+    - tokenizer_0
     environment:
     - BATCH_SIZE=100
-    - REPLICA_ID=1
-    - INPUT_QUEUE_NAME=tokenizer_queue
-    - Q3_4_OUTPUT_QUEUE_NAME=words_without_stopwords_queue
-    - Q5_SUM_OUTPUT_QUEUE_NAME=abstracts_length_queue
-    - Q5_AVERAGE_FILTER_OUTPUT_QUEUE_NAME=recent_queue
-    - CONTROL_EXCHANGE_NAME=tokenizer_control
+    - REPLICA_ID=0
+    - INPUT_QUEUE_NAME=words_without_stopwords_queue
+    - Q3_4_OUTPUT_QUEUE_NAME=unique_words_queue
+    - CONTROL_EXCHANGE_NAME=unique_words_filter_control
     - CONTROL_ROUTING_KEY=
     - RABBITMQ_HOST=rabbitmq
-    - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
+
+  hasher_0:
+    build:
+      context: ./src/
+      dockerfile: hasher/Dockerfile
+    container_name: hasher_0
+    depends_on:
+    - unique_words_filter_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_QUEUE_NAME=unique_words_queue
+    - OUTPUT_EXCHANGE_NAME=affinity_words_exchange
+    - OUTPUT_ROUTING_KEY_PREFIX=affinity_words
+    - CONTROL_EXCHANGE_NAME=hasher_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - NEXT_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
+
+  word_counter_0:
+    build:
+      context: ./src/
+      dockerfile: word_counter/Dockerfile
+    container_name: word_counter_0
+    depends_on:
+    - hasher_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_EXCHANGE_NAME=affinity_words_exchange
+    - INPUT_EXCHANGE_PREFIX=affinity_words
+    - RESULTS_QUEUE_NAME=results_queue
+    - TOP_EXCHANGE_NAME=client_affinity_exchange
+    - TOP_EXCHANGE_RK_PREFIX=client_affinity
+    - CONTROL_EXCHANGE_NAME=word_counter_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
+    - NEXT_STAGE_REPLICAS=1
+    - PYTHONUNBUFFERED=1
+
+  join_top_20_0:
+    build:
+      context: ./src/
+      dockerfile: join_top_20/Dockerfile
+    container_name: join_top_20_0
+    depends_on:
+    - word_counter_0
+    environment:
+    - BATCH_SIZE=100
+    - REPLICA_ID=0
+    - INPUT_EXCHANGE_NAME=client_affinity_exchange
+    - INPUT_EXCHANGE_PREFIX=client_affinity
+    - RESULTS_QUEUE_NAME=results_queue
+    - CONTROL_EXCHANGE_NAME=join_top_20_control
+    - CONTROL_ROUTING_KEY=
+    - RABBITMQ_HOST=rabbitmq
+    - PREVIOUS_STAGE_REPLICAS=1
     - PYTHONUNBUFFERED=1
 
   sum_0:
@@ -267,7 +303,7 @@ services:
     environment:
     - RABBITMQ_HOST=rabbitmq
     - REPLICA_ID=0
-    - PREVIOUS_STAGE_REPLICAS=2
+    - PREVIOUS_STAGE_REPLICAS=1
     - INPUT_QUEUE_NAME=abstracts_length_queue
     - CONTROL_EXCHANGE_NAME=sum_control
     - CONTROL_ROUTING_KEY=
@@ -312,7 +348,7 @@ services:
     - RECENT_QUEUE_NAME=recent_queue
     - AVERAGE_EXCHANGE=average
     - RESULTS_QUEUE_NAME=results_queue
-    - TOKENIZER_REPLICAS=2
+    - TOKENIZER_REPLICAS=1
     - SUM_JOIN_AMOUNT=1
     - STORE_PATH=/tmp/average_filter_store
     - PYTHONUNBUFFERED=1

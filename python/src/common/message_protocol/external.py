@@ -46,7 +46,7 @@ def _recv_sized(socket, size):
 def _recv_empty(socket):
     return None
 
-def _parse_article_records(raw_batch):
+def parse_article_records(raw_batch):
     batch_data = []
     index = 0
     while index < len(raw_batch):
@@ -66,7 +66,7 @@ def _parse_article_records(raw_batch):
 
 def _recv_article_record_batch(socket):         
     size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))
-    return _parse_article_records(_recv_sized(socket, size))
+    return parse_article_records(_recv_sized(socket, size))
 
 def _recv_article_record_batch_raw(socket):     
     size = external_serializer.deserialize_uint32(_recv_sized(socket, external_serializer.UINT32_SIZE))

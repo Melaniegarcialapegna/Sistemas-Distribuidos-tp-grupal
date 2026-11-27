@@ -5,20 +5,14 @@ class MessageHandler:
 
     def __init__(self,client_id):
         self.client_id = client_id
-        # Counters of how many messages have been sent to each queue
-        self.sent_articles = 0
+        self.sent_batches = 0
     
-    def serialize_article_batch(self, records):
-        rows = []
-        for record in records:
-            for column in USABLE_COLUMNS:
-                rows.append(record[column])
-        self.sent_articles += len(records)
-            
-        return self._batch(rows)            
+    def serialize_article_batch(self, raw_bytes):
+        self.sent_batches += 1
+        return self._batch([[raw_bytes]])          
 
     def serialize_eof_message(self):
-        return self._eof(self.sent_articles)
+        return self._eof(self.sent_batches)
 
     # Helpers
 

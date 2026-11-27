@@ -89,7 +89,7 @@ class BaseWorker(ABC):
 
     def visit_batch(self, batch_message):
         for payload in batch_message.payload:
-            self.process_data(batch_message.from_client_id, payload)  
+            self.process_data(batch_message.from_client_id, payload)
         self.eof_coordinator.on_data_processed(batch_message.from_client_id, len(batch_message.payload))  # Notify that multiple messages have been processed
 
     def visit_eof(self, eof_message):
@@ -171,7 +171,7 @@ class BaseWorker(ABC):
         pass
 
 
-# Idea: Agrupar todos los filtros
+
 class YearFilter(BaseWorker):
     @abstractmethod
     def __init__(self, batch_size, host):

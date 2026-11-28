@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 
 from .tlv_protocol import deserialize_tlv, serialize_tlv
+import itertools
+
+batch_id_generator = itertools.count(1)
 
 class MessageType(ABC):
     """
@@ -46,6 +49,10 @@ class BatchMessageType(MessageType):
     """
     Clase que representa un mensaje de lote (batch).
     """
+
+    def __init__(self, payload, from_client_id, batch_id=None):
+        super().__init__(payload, from_client_id)
+        self.batch_id = next(batch_id_generator) if batch_id is None else batch_id
 
     def visit(self, visitor):
         return visitor.visit_batch(self)

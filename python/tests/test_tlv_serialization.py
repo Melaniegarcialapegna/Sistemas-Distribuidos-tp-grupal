@@ -150,7 +150,8 @@ class TestInternalMessages(unittest.TestCase):
             ["bye", 256]
         ]
         client_id = 999
-        batch_message = BatchMessageType(batch_payload, client_id)
+        batch_id = 2**100 + 12345
+        batch_message = BatchMessageType(batch_payload, client_id, batch_id)
 
         serialized = TLVSerializer.serialize_message(batch_message)
         deserialized = TLVDeserializer.deserialize_message(serialized)
@@ -158,6 +159,13 @@ class TestInternalMessages(unittest.TestCase):
         self.assertIsInstance(deserialized, BatchMessageType)
         self.assertEqual(deserialized.payload, batch_payload)
         self.assertEqual(deserialized.from_client_id, client_id)
+        self.assertEqual(deserialized.batch_id, batch_id)
+
+    def test_batch_messages_get_distinct_ids_by_default(self):
+        first = BatchMessageType([], 1)
+        second = BatchMessageType([], 1)
+
+        self.assertNotEqual(first.batch_id, second.batch_id)
 
     def test_serialize_deserialize_control_message(self):
         control_payload = ["EOF", 500]

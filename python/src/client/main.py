@@ -8,9 +8,7 @@ import sys
 import threading
 import time
 import queue
-import pyarrow.parquet as pq
-import pyarrow as pa
-
+from pyarrow.parquet import ParquetFile
 from common import message_protocol
 
 INPUT_FILE = os.environ["INPUT_FILE"]
@@ -37,8 +35,6 @@ else:
         message_protocol.external.Query.Q4,
         message_protocol.external.Query.Q5,
     }
-
-pa.set_memory_pool(pa.system_memory_pool())
 
 class Client:
 
@@ -106,7 +102,7 @@ class Client:
             if self.closed:
                 return
             logging.info(f"Enviando datos de artículos desde el archivo: {parquet_file}")
-            parquet = pq.ParquetFile(parquet_file)
+            parquet = ParquetFile(parquet_file)
             for batch in parquet.iter_batches(batch_size=ROW_BATCH_SIZE, columns=USABLE_COLUMNS, use_threads=False):
                 if self.closed:
                     return
@@ -129,7 +125,7 @@ class Client:
             message_protocol.external.send_msg(
                 self.server_socket, message_protocol.external.MsgType.END_OF_RECORDS
             )
-            self._wait_for_ack
+            self._wait_for_ack()
 
     def recv_results(self):
         external = message_protocol.external
@@ -252,4 +248,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

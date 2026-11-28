@@ -31,7 +31,12 @@ class TLVSerializer:
         return MESSAGE_TYPE_REPRESENTATIONS['DATA'].to_bytes(1, "big") + data_message.from_client_id.to_bytes(4, "big") + self.serialize(data_message.payload)
 
     def visit_batch(self, batch_message):
-        return MESSAGE_TYPE_REPRESENTATIONS['BATCH'].to_bytes(1, "big") + batch_message.from_client_id.to_bytes(4, "big") + self.serialize_batch(batch_message.payload)
+        return (
+            MESSAGE_TYPE_REPRESENTATIONS['BATCH'].to_bytes(1, "big")
+            + batch_message.from_client_id.to_bytes(4, "big")
+            + batch_message.batch_id.to_bytes(16, "big")
+            + self.serialize_batch(batch_message.payload)
+        )
 
     def visit_control(self, control_message):
         return MESSAGE_TYPE_REPRESENTATIONS['CONTROL'].to_bytes(1, "big") + control_message.from_client_id.to_bytes(4, "big") + self.serialize(control_message.payload) 
@@ -82,8 +87,9 @@ class TLVDeserializer:
             payload = TLVDeserializer.deserialize(data[5:])  # Deserialize the payload
             return DataMessageType(payload, client_id)
         elif type_byte == MESSAGE_TYPE_REPRESENTATIONS['BATCH']:
-            payload = TLVDeserializer.deserialize_batch(data[5:])  # Deserialize the batch payload
-            return BatchMessageType(payload, client_id)
+            batch_id = int.from_bytes(data[5:21], 'big')
+            payload = TLVDeserializer.deserialize_batch(data[21:])  # Deserialize the batch payload
+            return BatchMessageType(payload, client_id, batch_id)
         elif type_byte == MESSAGE_TYPE_REPRESENTATIONS['CONTROL']:
             payload = TLVDeserializer.deserialize(data[5:])  # Deserialize the payload
             return ControlMessageType(payload, client_id)

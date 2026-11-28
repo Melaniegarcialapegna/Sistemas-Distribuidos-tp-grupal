@@ -54,7 +54,7 @@ class StateManager:
         self._processed.add((client_id, batch_id))
         self._entries_since_snapshot += 1
 
-    def should_snapshot(self) -> bool:
+    def should_snapshot(self):
         return self._entries_since_snapshot >= self._snapshot_every
 
     def create_snapshot(self, state_callback) -> None:

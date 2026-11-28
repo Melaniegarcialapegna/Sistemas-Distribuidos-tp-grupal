@@ -10,7 +10,7 @@ _EOF_BATCH_ID = "eof"
 class StatefulWorker(BaseWorker):
     def __init__(self, batch_size, host, state_dir, snapshot_every) -> None:
         super().__init__(batch_size, host)
-        self.state_manager = StateManager(state_dir, snapshot_every=snapshot_every)
+        self.state_manager = StateManager(state_dir, snapshot_every)
 
 
     def start(self) -> None:
@@ -34,9 +34,9 @@ class StatefulWorker(BaseWorker):
         for delta in wal_deltas:
             self.apply_delta(delta)
 
-    def visit_batch(self, batch_message) -> None:
+    def visit_batch(self, batch_message):
         client_id = batch_message.from_client_id
-        batch_id = getattr(batch_message, "batch_id", 0)
+        batch_id = batch_message.batch_id
 
         if self.state_manager.already_processed(client_id, batch_id):
             self.eof_coordinator.on_data_processed(client_id, len(batch_message.payload))
@@ -51,7 +51,7 @@ class StatefulWorker(BaseWorker):
 
         self.eof_coordinator.on_data_processed(client_id, len(batch_message.payload))
 
-    def visit_eof(self, eof_message) -> None:
+    def visit_eof(self, eof_message):
         client_id = eof_message.from_client_id
 
         if self.state_manager.already_processed(client_id, _EOF_BATCH_ID):
@@ -65,16 +65,18 @@ class StatefulWorker(BaseWorker):
             {"op": "eof", "client_id": client_id},
         )
 
-    # -- Gestión de estado --
+    def update_state(self, client_id, batch_id, delta):
+        try:
+            self.state_manager.append(client_id, batch_id, delta)
+            if self.state_manager.should_snapshot():
+                self.state_manager.create_snapshot(self.serialize_state)
+        except Exception:
+            logging.exception("update_state falló client=%s batch_id=%r",
+                            client_id, batch_id)
+            raise
 
-    def update_state(self, client_id, batch_id, delta) -> None:
-        self.state_manager.append(client_id, batch_id, delta)
-        if self.state_manager.should_snapshot():
-            self.state_manager.create_snapshot(self.serialize_state)
-
-    def force_snapshot(self) -> None:
+    def force_snapshot(self):
         self.state_manager.create_snapshot(self.serialize_state)
-
 
     @abstractmethod
     def build_batch_delta(self, client_id):
@@ -87,11 +89,11 @@ class StatefulWorker(BaseWorker):
         pass
 
     @abstractmethod
-    def restore_snapshot(self, state) -> None:
+    def restore_snapshot(self, state):
         """Reconstruye el estado en memoria a partir de un snapshot cargado."""
         pass
 
     @abstractmethod
-    def apply_delta(self, delta) -> None:
+    def apply_delta(self, delta):
         """Aplica un delta del WAL al estado en memoria."""
         pass

@@ -8,16 +8,17 @@ class MessageHandler:
         self.sent_batches = 0
     
     def serialize_raw_batch(self, raw_bytes):
+        seq = self.sent_batches
         self.sent_batches += 1
-        return self._batch([[raw_bytes]])          
+        return self._batch([[raw_bytes]],seq)          
 
     def serialize_eof_message(self):
         return self._eof(self.sent_batches)
 
     # Helpers
 
-    def _batch(self, items):
-        return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id))
+    def _batch(self, items,seq):
+        return TLVSerializer.serialize_message(BatchMessageType(items, self.client_id, batch_id=seq))
 
     def _eof(self, count):
         return TLVSerializer.serialize_message(EOFMessageType([count], self.client_id))
